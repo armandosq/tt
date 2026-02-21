@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       rdp_password:
-        description: 'Contraseña para el usuario RDP'
+        description: 'Contrasena para el usuario RDP'
         required: true
         type: string
 
@@ -14,15 +14,15 @@ jobs:
 
     steps:
 
-      # =========================================================
-      # 1. LIBERAR ESPACIO EN DISCO (limpieza agresiva)
-      # =========================================================
-      - name: Free Up Disk Space
+      # =======================================================
+      # 1. LIBERAR ESPACIO EN DISCO
+      # =======================================================
+      - name: Free Disk Space
+        shell: pwsh
         run: |
-          Write-Host "=== Espacio ANTES ==="
+          Write-Host "=== Disco ANTES ==="
           Get-PSDrive C | ForEach-Object { Write-Host "Libre: $([math]::Round($_.Free/1GB,2)) GB" }
-
-          $pathsToDelete = @(
+          $del = @(
             "C:\hostedtoolcache\windows\go",
             "C:\hostedtoolcache\windows\node",
             "C:\hostedtoolcache\windows\PyPy",
@@ -45,962 +45,210 @@ jobs:
             "C:\Program Files\Microsoft SDKs",
             "C:\Program Files (x86)\Windows Kits",
             "C:\Program Files\LLVM",
-            "C:\Program Files\Mercurial",
-            "C:\Program Files\NSIS",
-            "C:\Program Files\7-Zip",
-            "C:\Program Files\Git\mingw64\share\doc",
-            "C:\Program Files\Git\mingw64\share\man",
             "C:\ProgramData\chocolatey\lib",
             "C:\ProgramData\chocolatey\bin",
             "C:\tools\php",
             "C:\tools\Ruby31-x64",
-            "C:\tools\kotlinc",
-            "C:\tools\sbt",
             "C:\Strawberry"
           )
-          foreach ($path in $pathsToDelete) {
-            if (Test-Path $path) {
-              Write-Host "Eliminando: $path"
-              Remove-Item $path -Recurse -Force -ErrorAction SilentlyContinue
+          foreach ($p in $del) {
+            if (Test-Path $p) {
+              Remove-Item $p -Recurse -Force -ErrorAction SilentlyContinue
+              Write-Host "Eliminado: $p"
             }
           }
-
-          Stop-Service -Name wuauserv -Force -ErrorAction SilentlyContinue
+          Stop-Service wuauserv -Force -ErrorAction SilentlyContinue
           Remove-Item "C:\Windows\SoftwareDistribution\Download\*" -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item "$env:TEMP\*"           -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item "C:\Windows\Temp\*"     -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item "C:\Windows\Logs\*"     -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item "$env:TEMP\*"            -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item "C:\Windows\Temp\*"    -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item "C:\Windows\Logs\*"    -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item "C:\Windows\Prefetch\*" -Recurse -Force -ErrorAction SilentlyContinue
-
-          Write-Host "=== Espacio DESPUES ==="
+          Write-Host "=== Disco DESPUES ==="
           Get-PSDrive C | ForEach-Object { Write-Host "Libre: $([math]::Round($_.Free/1GB,2)) GB" }
 
-      # =========================================================
-      # 2. INSTALAR BRAVE BROWSER
-      # =========================================================
+      # =======================================================
+      # 2. INSTALAR BRAVE
+      # =======================================================
       - name: Install Brave Browser
+        shell: pwsh
         run: |
-          Write-Host "Instalando Brave Browser..."
-          $braveUrl = "https://referrals.brave.com/latest/BraveBrowserSetup-BRV010.exe"
-          $braveInstaller = "$env:TEMP\brave_installer.exe"
-          Invoke-WebRequest -Uri $braveUrl -OutFile $braveInstaller -UseBasicParsing
-          Start-Process -FilePath $braveInstaller -ArgumentList "/silent", "/install" -Wait
-          Remove-Item $braveInstaller -Force -ErrorAction SilentlyContinue
-          Write-Host "✅ Brave instalado"
+          $url = "https://referrals.brave.com/latest/BraveBrowserSetup-BRV010.exe"
+          $inst = "$env:TEMP\brave.exe"
+          Invoke-WebRequest -Uri $url -OutFile $inst -UseBasicParsing
+          Start-Process $inst -ArgumentList "/silent","/install" -Wait
+          Remove-Item $inst -Force -ErrorAction SilentlyContinue
+          Write-Host "Brave instalado"
 
-      # =========================================================
+      # =======================================================
       # 3. INSTALAR PYTHON 3.11
-      # =========================================================
+      # =======================================================
       - name: Install Python 3.11
+        shell: pwsh
         run: |
-          Write-Host "Instalando Python 3.11..."
-          $pyUrl = "https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe"
-          $pyInstaller = "$env:TEMP\python_installer.exe"
-          Invoke-WebRequest -Uri $pyUrl -OutFile $pyInstaller -UseBasicParsing
-          Start-Process -FilePath $pyInstaller -ArgumentList `
-            "/quiet", "InstallAllUsers=1", "PrependPath=1", "Include_pip=1" -Wait
-          Remove-Item $pyInstaller -Force -ErrorAction SilentlyContinue
-
-          # Refrescar PATH
-          $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" + `
-                      [System.Environment]::GetEnvironmentVariable("PATH","User")
-
+          $url = "https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe"
+          $inst = "$env:TEMP\python.exe"
+          Invoke-WebRequest -Uri $url -OutFile $inst -UseBasicParsing
+          Start-Process $inst -ArgumentList "/quiet","InstallAllUsers=1","PrependPath=1","Include_pip=1" -Wait
+          Remove-Item $inst -Force -ErrorAction SilentlyContinue
+          $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH","User")
           python --version
           pip --version
-          Write-Host "✅ Python instalado"
+          Write-Host "Python instalado"
 
-      # =========================================================
+      # =======================================================
       # 4. INSTALAR FFMPEG
-      # =========================================================
+      # =======================================================
       - name: Install FFmpeg
+        shell: pwsh
         run: |
-          Write-Host "Instalando FFmpeg..."
-          $ffmpegUrl  = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
-          $ffmpegZip  = "$env:TEMP\ffmpeg.zip"
-          $ffmpegDest = "C:\ffmpeg"
-
-          Invoke-WebRequest -Uri $ffmpegUrl -OutFile $ffmpegZip -UseBasicParsing
-          Expand-Archive -Path $ffmpegZip -DestinationPath $ffmpegDest -Force
-          Remove-Item $ffmpegZip -Force
-
-          # Mover binarios a raíz de C:\ffmpeg\bin
-          $inner = Get-ChildItem $ffmpegDest -Directory | Select-Object -First 1
-          if ($inner) {
-            Copy-Item "$($inner.FullName)\bin\*" "$ffmpegDest\" -Force
-          }
-
-          # Agregar al PATH del sistema
-          $currentPath = [System.Environment]::GetEnvironmentVariable("PATH","Machine")
-          [System.Environment]::SetEnvironmentVariable("PATH", "$currentPath;$ffmpegDest", "Machine")
-          $env:PATH += ";$ffmpegDest"
-
+          $url  = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
+          $zip  = "$env:TEMP\ffmpeg.zip"
+          $dest = "C:\ffmpeg"
+          Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing
+          Expand-Archive -Path $zip -DestinationPath $dest -Force
+          Remove-Item $zip -Force
+          $inner = Get-ChildItem $dest -Directory | Select-Object -First 1
+          if ($inner) { Copy-Item "$($inner.FullName)\bin\*" "$dest\" -Force }
+          $cur = [System.Environment]::GetEnvironmentVariable("PATH","Machine")
+          [System.Environment]::SetEnvironmentVariable("PATH","$cur;$dest","Machine")
+          $env:PATH += ";$dest"
           ffmpeg -version | Select-Object -First 1
-          ffprobe -version | Select-Object -First 1
-          Write-Host "✅ FFmpeg instalado"
+          Write-Host "FFmpeg instalado"
 
-      # =========================================================
-      # 5. INSTALAR DEPENDENCIAS PYTHON — CÓDIGO 1
+      # =======================================================
+      # 5. INSTALAR DEPENDENCIAS SCRIPT 1
       #    gradio>=4.0.0  cloudscraper  huggingface_hub
-      # =========================================================
-      - name: Install Python deps (Script 1 - Video Converter Pro)
+      # =======================================================
+      - name: Install deps Script 1
+        shell: pwsh
         run: |
-          $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" + `
-                      [System.Environment]::GetEnvironmentVariable("PATH","User")
+          $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH","User")
           pip install --upgrade "gradio>=4.0.0" cloudscraper huggingface_hub
-          Write-Host "✅ Deps Script 1 instaladas"
+          Write-Host "Deps Script 1 OK"
 
-      # =========================================================
-      # 6. INSTALAR DEPENDENCIAS PYTHON — CÓDIGO 2
+      # =======================================================
+      # 6. INSTALAR DEPENDENCIAS SCRIPT 2
       #    gradio>=5.0  requests  psutil
-      # =========================================================
-      - name: Install Python deps (Script 2 - HLS DASH Converter)
+      # =======================================================
+      - name: Install deps Script 2
+        shell: pwsh
         run: |
-          $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" + `
-                      [System.Environment]::GetEnvironmentVariable("PATH","User")
+          $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH","User")
           pip install --upgrade "gradio>=5.0" requests psutil
-          Write-Host "✅ Deps Script 2 instaladas"
+          Write-Host "Deps Script 2 OK"
 
-      # =========================================================
-      # 7. ESCRIBIR CÓDIGO 1 — Video Converter Pro v2.0
-      # =========================================================
+      # =======================================================
+      # 7. ESCRIBIR SCRIPT 1 (base64 decode - sin here-string)
+      # =======================================================
       - name: Write Script 1 - Video Converter Pro
+        shell: pwsh
         run: |
-          $code = @'
-import sys
-import os
-import subprocess
-import re
-import json
-import tempfile
-import shutil
-from pathlib import Path
-from typing import Optional, List, Tuple
+          New-Item -ItemType Directory -Force -Path "C:\scripts" | Out-Null
+          $b64 = "aW1wb3J0IHN5cwppbXBvcnQgb3MKaW1wb3J0IHN1YnByb2Nlc3MKaW1wb3J0IHJlCmltcG9ydCBqc29uCmltcG9ydCB0ZW1wZmlsZQppbXBvcnQgc2h1dGlsCmZyb20gcGF0aGxpYiBpbXBvcnQgUGF0aApmcm9tIHR5cGluZyBpbXBvcnQgT3B0aW9uYWwsIExpc3QsIFR1cGxlCgppbXBvcnQgZ3JhZGlvIGFzIGdyCmZyb20gaHVnZ2luZ2ZhY2VfaHViIGltcG9ydCBIZkFwaSwgbGlzdF9tb2RlbHMKCkNVU1RPTV9DU1MgPSAiIiIKYm9keSB7IGJhY2tncm91bmQtY29sb3I6ICMwZjBmMWE7IGNvbG9yOiAjZjhmYWZjOyB9Ci5ncmFkaW8tY29udGFpbmVyIHsgYmFja2dyb3VuZC1jb2xvcjogIzBmMGYxYSAhaW1wb3J0YW50OyB9CmZvb3RlciB7IGRpc3BsYXk6IG5vbmUgIWltcG9ydGFudDsgfQoiIiIKCmNsYXNzIEF1ZGlvVHJhY2s6CiAgICBkZWYgX19pbml0X18oc2VsZiwgaW5kZXgsIHN0cmVhbV9pbmRleCwgY29kZWMsIGxhbmd1YWdlLCBjaGFubmVscywgdGl0bGU9IiIpOgogICAgICAgIHNlbGYuaW5kZXggPSBpbmRleDsgc2VsZi5zdHJlYW1faW5kZXggPSBzdHJlYW1faW5kZXg7IHNlbGYuY29kZWMgPSBjb2RlYwogICAgICAgIHNlbGYubGFuZ3VhZ2UgPSBsYW5ndWFnZTsgc2VsZi5jaGFubmVscyA9IGNoYW5uZWxzOyBzZWxmLnRpdGxlID0gdGl0bGUKICAgIGRlZiBkaXNwbGF5X25hbWUoc2VsZik6CiAgICAgICAgbGFuZyA9IHNlbGYubGFuZ3VhZ2UgaWYgc2VsZi5sYW5ndWFnZSAhPSAidW5kIiBlbHNlICJVbmtub3duIgogICAgICAgIGNoID0gZiJ7c2VsZi5jaGFubmVsc31jaCIgaWYgc2VsZi5jaGFubmVscyBlbHNlICIiCiAgICAgICAgcmV0dXJuIGYiW3tzZWxmLmluZGV4fV0ge2xhbmd9IHwge3NlbGYuY29kZWN9IHtjaH0ge3NlbGYudGl0bGV9Ii5zdHJpcCgpCgpjbGFzcyBTdWJ0aXRsZVRyYWNrOgogICAgZGVmIF9faW5pdF9fKHNlbGYsIGluZGV4LCBzdHJlYW1faW5kZXgsIGNvZGVjLCBsYW5ndWFnZSwgdGl0bGU9IiIsIGZvcmNlZD1GYWxzZSk6CiAgICAgICAgc2VsZi5pbmRleCA9IGluZGV4OyBzZWxmLnN0cmVhbV9pbmRleCA9IHN0cmVhbV9pbmRleDsgc2VsZi5jb2RlYyA9IGNvZGVjCiAgICAgICAgc2VsZi5sYW5ndWFnZSA9IGxhbmd1YWdlOyBzZWxmLnRpdGxlID0gdGl0bGU7IHNlbGYuZm9yY2VkID0gZm9yY2VkCiAgICBkZWYgZGlzcGxheV9uYW1lKHNlbGYpOgogICAgICAgIGxhbmcgPSBzZWxmLmxhbmd1YWdlIGlmIHNlbGYubGFuZ3VhZ2UgIT0gInVuZCIgZWxzZSAiVW5rbm93biIKICAgICAgICByZXR1cm4gZiJbe3NlbGYuaW5kZXh9XSB7bGFuZ30gfCB7c2VsZi5jb2RlY317JyAoRm9yY2VkKScgaWYgc2VsZi5mb3JjZWQgZWxzZSAnJ30iCgpjbGFzcyBNZWRpYUluZm86CiAgICBkZWYgX19pbml0X18oc2VsZiwgcGF0aCk6CiAgICAgICAgc2VsZi5wYXRoID0gcGF0aDsgc2VsZi5hdWRpb190cmFja3MgPSBbXTsgc2VsZi5zdWJ0aXRsZV90cmFja3MgPSBbXQogICAgICAgIHNlbGYuZHVyYXRpb24gPSAwLjA7IHNlbGYudGl0bGUgPSBOb25lCgpjbGFzcyBNZWRpYUFuYWx5emVyOgogICAgQHN0YXRpY21ldGhvZAogICAgZGVmIGdldF9tZWRpYV9pbmZvKHNvdXJjZSk6CiAgICAgICAgaW5mbyA9IE1lZGlhSW5mbyhwYXRoPXNvdXJjZSkKICAgICAgICB0cnk6CiAgICAgICAgICAgIGNtZCA9IFsiZmZwcm9iZSIsICItdiIsICJxdWlldCIsICItcHJpbnRfZm9ybWF0IiwgImpzb24iLCAiLXNob3dfZm9ybWF0IiwgIi1zaG93X3N0cmVhbXMiLCBzb3VyY2VdCiAgICAgICAgICAgIHJlc3VsdCA9IHN1YnByb2Nlc3MucnVuKGNtZCwgY2FwdHVyZV9vdXRwdXQ9VHJ1ZSwgdGV4dD1UcnVlLCB0aW1lb3V0PTYwKQogICAgICAgICAgICBpZiByZXN1bHQucmV0dXJuY29kZSAhPSAwOiByZXR1cm4gaW5mbwogICAgICAgICAgICBkYXRhID0ganNvbi5sb2FkcyhyZXN1bHQuc3Rkb3V0KQogICAgICAgICAgICBmb3JtYXRfdGFncyA9IGRhdGEuZ2V0KCJmb3JtYXQiLCB7fSkuZ2V0KCJ0YWdzIiwge30pCiAgICAgICAgICAgIGluZm8udGl0bGUgPSBmb3JtYXRfdGFncy5nZXQoInRpdGxlIikgb3IgZm9ybWF0X3RhZ3MuZ2V0KCJUSVRMRSIpCiAgICAgICAgICAgIGlmIGluZm8udGl0bGU6IGluZm8udGl0bGUgPSBpbmZvLnRpdGxlLnN0cmlwKCkKICAgICAgICAgICAgaWYgImZvcm1hdCIgaW4gZGF0YSBhbmQgImR1cmF0aW9uIiBpbiBkYXRhWyJmb3JtYXQiXToKICAgICAgICAgICAgICAgIGluZm8uZHVyYXRpb24gPSBmbG9hdChkYXRhWyJmb3JtYXQiXVsiZHVyYXRpb24iXSkKICAgICAgICAgICAgYXVkaW9faWR4LCBzdWJfaWR4ID0gMCwgMAogICAgICAgICAgICBmb3Igc3RyZWFtIGluIGRhdGEuZ2V0KCJzdHJlYW1zIiwgW10pOgogICAgICAgICAgICAgICAgY29kZWNfdHlwZSA9IHN0cmVhbS5nZXQoImNvZGVjX3R5cGUiLCAiIikKICAgICAgICAgICAgICAgIHRhZ3MgPSBzdHJlYW0uZ2V0KCJ0YWdzIiwge30pCiAgICAgICAgICAgICAgICBpZiBjb2RlY190eXBlID09ICJhdWRpbyI6CiAgICAgICAgICAgICAgICAgICAgdCA9IEF1ZGlvVHJhY2soYXVkaW9faWR4LCBzdHJlYW0uZ2V0KCJpbmRleCIsMCksIHN0cmVhbS5nZXQoImNvZGVjX25hbWUiLCJ1bmtub3duIiksCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgdGFncy5nZXQoImxhbmd1YWdlIiwidW5kIiksIHN0cmVhbS5nZXQoImNoYW5uZWxzIiwyKSwgdGFncy5nZXQoInRpdGxlIiwiIikpCiAgICAgICAgICAgICAgICAgICAgaW5mby5hdWRpb190cmFja3MuYXBwZW5kKHQpOyBhdWRpb19pZHggKz0gMQogICAgICAgICAgICAgICAgZWxpZiBjb2RlY190eXBlID09ICJzdWJ0aXRsZSI6CiAgICAgICAgICAgICAgICAgICAgZCA9IHN0cmVhbS5nZXQoImRpc3Bvc2l0aW9uIiwge30pCiAgICAgICAgICAgICAgICAgICAgdCA9IFN1YnRpdGxlVHJhY2soc3ViX2lkeCwgc3RyZWFtLmdldCgiaW5kZXgiLDApLCBzdHJlYW0uZ2V0KCJjb2RlY19uYW1lIiwidW5rbm93biIpLAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIHRhZ3MuZ2V0KCJsYW5ndWFnZSIsInVuZCIpLCB0YWdzLmdldCgidGl0bGUiLCIiKSwgZC5nZXQoImZvcmNlZCIsMCk9PTEpCiAgICAgICAgICAgICAgICAgICAgaW5mby5zdWJ0aXRsZV90cmFja3MuYXBwZW5kKHQpOyBzdWJfaWR4ICs9IDEKICAgICAgICBleGNlcHQgRXhjZXB0aW9uIGFzIGU6CiAgICAgICAgICAgIHByaW50KGYiRXJyb3I6IHtlfSIpCiAgICAgICAgcmV0dXJuIGluZm8KCmNsYXNzIFZpZGVvQ29udmVydGVyOgogICAgZGVmIF9faW5pdF9fKHNlbGYpOgogICAgICAgIHNlbGYuY3VycmVudF9wcm9jZXNzID0gTm9uZTsgc2VsZi5jYW5jZWxsZWQgPSBGYWxzZQogICAgZGVmIGNhbmNlbChzZWxmKToKICAgICAgICBzZWxmLmNhbmNlbGxlZCA9IFRydWUKICAgICAgICBpZiBzZWxmLmN1cnJlbnRfcHJvY2VzczoKICAgICAgICAgICAgdHJ5OiBzZWxmLmN1cnJlbnRfcHJvY2Vzcy50ZXJtaW5hdGUoKQogICAgICAgICAgICBleGNlcHQ6IHBhc3MKICAgIGRlZiBydW5fZmZtcGVnKHNlbGYsIGNtZCwgZHVyYXRpb24sIHByb2dyZXNzPU5vbmUsIG1zZz0iIik6CiAgICAgICAgdHJ5OgogICAgICAgICAgICBzZWxmLmN1cnJlbnRfcHJvY2VzcyA9IHN1YnByb2Nlc3MuUG9wZW4oY21kLCBzdGRvdXQ9c3VicHJvY2Vzcy5QSVBFLCBzdGRlcnI9c3VicHJvY2Vzcy5QSVBFLCB1bml2ZXJzYWxfbmV3bGluZXM9VHJ1ZSkKICAgICAgICAgICAgcGF0dGVybiA9IHJlLmNvbXBpbGUociJ0aW1lPShcZHsyfSk6KFxkezJ9KTooXGR7Mn0pXC4oXGR7Mn0pIikKICAgICAgICAgICAgZm9yIGxpbmUgaW4gc2VsZi5jdXJyZW50X3Byb2Nlc3Muc3RkZXJyOgogICAgICAgICAgICAgICAgaWYgc2VsZi5jYW5jZWxsZWQ6IHJldHVybiBGYWxzZSwgIkNhbmNlbGFkbyIKICAgICAgICAgICAgICAgIG0gPSBwYXR0ZXJuLnNlYXJjaChsaW5lKQogICAgICAgICAgICAgICAgaWYgbSBhbmQgZHVyYXRpb24gPiAwOgogICAgICAgICAgICAgICAgICAgIGgsbWkscyxtcyA9IG1hcChpbnQsIG0uZ3JvdXBzKCkpCiAgICAgICAgICAgICAgICAgICAgcGN0ID0gbWluKDEwMCwgKGgqMzYwMCttaSo2MCtzK21zLzEwMCkvZHVyYXRpb24qMTAwKQogICAgICAgICAgICAgICAgICAgIGlmIHByb2dyZXNzOiBwcm9ncmVzcyhwY3QvMTAwLCBkZXNjPWYie21zZ306IHtwY3Q6LjBmfSUiKQogICAgICAgICAgICBzZWxmLmN1cnJlbnRfcHJvY2Vzcy53YWl0KCkKICAgICAgICAgICAgcmV0dXJuIHNlbGYuY3VycmVudF9wcm9jZXNzLnJldHVybmNvZGUgPT0gMCwgIk9LIgogICAgICAgIGV4Y2VwdCBFeGNlcHRpb24gYXMgZToKICAgICAgICAgICAgcmV0dXJuIEZhbHNlLCBzdHIoZSkKICAgIGRlZiBjb252ZXJ0KHNlbGYsIHNvdXJjZSwgaXNfdXJsLCBtb2RlLCBvdXRwdXRfZGlyLCBzZWxlY3RlZF9hdWRpbywgZ2VuZXJhdGVfc2luZ2xlLAogICAgICAgICAgICAgICAgZXh0cmFjdF9zdWIsIHN1Yl9pbmRleCwgcHJvZ3Jlc3M9Tm9uZSwgbG9nX2Z1bmM9cHJpbnQpOgogICAgICAgIHNlbGYuY2FuY2VsbGVkID0gRmFsc2UKICAgICAgICB0cnk6CiAgICAgICAgICAgIGV4dHJhID0gWyItdXNlcl9hZ2VudCIsIk1vemlsbGEvNS4wIiwiLWhlYWRlcnMiLCJSZWZlcmVyOiBodHRwczovL2dvb2dsZS5jb21cclxuIl0gaWYgaXNfdXJsIGVsc2UgW10KICAgICAgICAgICAgaW5mbyA9IE1lZGlhQW5hbHl6ZXIuZ2V0X21lZGlhX2luZm8oc291cmNlKQogICAgICAgICAgICBkdXJhdGlvbiA9IGluZm8uZHVyYXRpb24gaWYgaW5mby5kdXJhdGlvbiA+IDAgZWxzZSAxCiAgICAgICAgICAgIGJhc2VfbmFtZSA9IGluZm8udGl0bGUgaWYgaW5mby50aXRsZSBlbHNlIFBhdGgoc291cmNlKS5zdGVtCiAgICAgICAgICAgIGlmIG5vdCBiYXNlX25hbWUgb3Igbm90IGJhc2VfbmFtZS5zdHJpcCgpOiBiYXNlX25hbWUgPSAidmlkZW9fc2luX25vbWJyZSIKICAgICAgICAgICAgZm9sZGVyX25hbWUgPSByZS5zdWIocidbPD46Ii9cXHw/Kl0nLCAnXycsIGJhc2VfbmFtZSkKICAgICAgICAgICAgZm9sZGVyX25hbWUgPSByZS5zdWIocidccysnLCAnICcsIGZvbGRlcl9uYW1lKS5zdHJpcCgpLnJlcGxhY2UoJyAnLCAnXycpCiAgICAgICAgICAgIGZvciBvLCBuIGluIFsoImEiLCI0IiksKCJBIiwiNCIpLCgiaSIsIjEiKSwoIkkiLCIxIiksKCJvIiwiMCIpLCgiTyIsIjAiKV06CiAgICAgICAgICAgICAgICBmb2xkZXJfbmFtZSA9IGZvbGRlcl9uYW1lLnJlcGxhY2UobywgbikKICAgICAgICAgICAgZm9sZGVyX25hbWUgPSBmb2xkZXJfbmFtZVs6MTUwXQogICAgICAgICAgICB0ZW1wX2ZvbGRlciA9IHRlbXBmaWxlLm1rZHRlbXAocHJlZml4PSJ2aWRlb19jb252XyIpCiAgICAgICAgICAgIG91dF9mb2xkZXIgPSBvcy5wYXRoLmpvaW4odGVtcF9mb2xkZXIsIGZvbGRlcl9uYW1lKQogICAgICAgICAgICBvcy5tYWtlZGlycyhvdXRfZm9sZGVyLCBleGlzdF9vaz1UcnVlKQogICAgICAgICAgICBsb2dfZnVuYyhmIkNhcnBldGE6IHtmb2xkZXJfbmFtZX0iKQogICAgICAgICAgICBhbGxfYXVkaW9fcGF0aCA9IG9zLnBhdGguam9pbihvdXRfZm9sZGVyLCBmIntmb2xkZXJfbmFtZX1fYWxsX2F1ZGlvLm1wNCIpCiAgICAgICAgICAgIGlmIG1vZGUgPT0gIlZpZGVvIEgyNjQgMTA4MHAgKyBBdWRpbyBNUDMiOgogICAgICAgICAgICAgICAgY21kID0gWyJmZm1wZWciLCAiLXkiXSArIGV4dHJhICsgWyItaSIsIHNvdXJjZSwgIi1tYXAiLCAiMDp2OjAiXQogICAgICAgICAgICAgICAgZm9yIGkgaW4gcmFuZ2UobGVuKGluZm8uYXVkaW9fdHJhY2tzKSk6IGNtZC5leHRlbmQoWyItbWFwIiwgZiIwOmE6e2l9Il0pCiAgICAgICAgICAgICAgICBjbWQuZXh0ZW5kKFsiLWM6diIsImxpYngyNjQiLCItdmYiLCJzY2FsZT0tMjoxMDgwIiwiLXByZXNldCIsInNsb3ciLCItY3JmIiwiMTgiXSkKICAgICAgICAgICAgICAgIGZvciBpIGluIHJhbmdlKGxlbihpbmZvLmF1ZGlvX3RyYWNrcykpOgogICAgICAgICAgICAgICAgICAgIGNtZC5leHRlbmQoW2YiLWM6YTp7aX0iLCJsaWJtcDNsYW1lIixmIi1iOmE6e2l9IiwiMzIwayIsZiItYXI6YTp7aX0iLCI0ODAwMCJdKQogICAgICAgICAgICBlbHNlOgogICAgICAgICAgICAgICAgY21kID0gWyJmZm1wZWciLCAiLXkiXSArIGV4dHJhICsgWyItaSIsIHNvdXJjZSwgIi1tYXAiLCAiMDp2OjAiXQogICAgICAgICAgICAgICAgZm9yIGkgaW4gcmFuZ2UobGVuKGluZm8uYXVkaW9fdHJhY2tzKSk6IGNtZC5leHRlbmQoWyItbWFwIiwgZiIwOmE6e2l9Il0pCiAgICAgICAgICAgICAgICBjbWQuZXh0ZW5kKFsiLWM6diIsImNvcHkiXSkKICAgICAgICAgICAgICAgIGlmIG1vZGUgPT0gIlZpZGVvIENvcHkgKyBBdWRpbyBNUDMiOgogICAgICAgICAgICAgICAgICAgIGZvciBpIGluIHJhbmdlKGxlbihpbmZvLmF1ZGlvX3RyYWNrcykpOgogICAgICAgICAgICAgICAgICAgICAgICBjbWQuZXh0ZW5kKFtmIi1jOmE6e2l9IiwibGlibXAzbGFtZSIsZiItYjphOntpfSIsIjMyMGsiLGYiLWFyOmE6e2l9IiwiNDgwMDAiXSkKICAgICAgICAgICAgICAgIGVsc2U6CiAgICAgICAgICAgICAgICAgICAgZm9yIGkgaW4gcmFuZ2UobGVuKGluZm8uYXVkaW9fdHJhY2tzKSk6CiAgICAgICAgICAgICAgICAgICAgICAgIGNtZC5leHRlbmQoW2YiLWM6YTp7aX0iLCJmbGFjIixmIi1jb21wcmVzc2lvbl9sZXZlbDphOntpfSIsIjAiXSkKICAgICAgICAgICAgY21kLmV4dGVuZChbIi1tYXBfbWV0YWRhdGEiLCIwIiwiLW1ldGFkYXRhIiwiY29weXJpZ2h0PVBvd2VyIFByb2RzIiwgYWxsX2F1ZGlvX3BhdGhdKQogICAgICAgICAgICBvaywgbXNnX3IgPSBzZWxmLnJ1bl9mZm1wZWcoY21kLCBkdXJhdGlvbiwgcHJvZ3Jlc3MsICJSZW5kZXJpemFkbyIpCiAgICAgICAgICAgIGlmIG5vdCBvayBvciBzZWxmLmNhbmNlbGxlZDogcmV0dXJuIEZhbHNlLCBmIkVycm9yOiB7bXNnX3J9IiwgTm9uZQogICAgICAgICAgICBpZiBnZW5lcmF0ZV9zaW5nbGUgYW5kIHNlbGVjdGVkX2F1ZGlvIDwgbGVuKGluZm8uYXVkaW9fdHJhY2tzKToKICAgICAgICAgICAgICAgIHNwID0gb3MucGF0aC5qb2luKG91dF9mb2xkZXIsIGYie2ZvbGRlcl9uYW1lfV9hdWRpb197c2VsZWN0ZWRfYXVkaW99Lm1wNCIpCiAgICAgICAgICAgICAgICBzYyA9IFsiZmZtcGVnIiwiLXkiLCItaSIsYWxsX2F1ZGlvX3BhdGgsIi1tYXAiLCIwOnY6MCIsIi1tYXAiLGYiMDphOntzZWxlY3RlZF9hdWRpb30iLCItYyIsImNvcHkiLCItbWFwX21ldGFkYXRhIiwiMCIsc3BdCiAgICAgICAgICAgICAgICBzZWxmLnJ1bl9mZm1wZWcoc2MsIGR1cmF0aW9uLCBwcm9ncmVzcywgIkV4dHJhY2Npb24iKQogICAgICAgICAgICBpZiBleHRyYWN0X3N1YiBhbmQgaW5mby5zdWJ0aXRsZV90cmFja3MgYW5kIHN1Yl9pbmRleCA8IGxlbihpbmZvLnN1YnRpdGxlX3RyYWNrcyk6CiAgICAgICAgICAgICAgICB2cCA9IG9zLnBhdGguam9pbihvdXRfZm9sZGVyLCBmIntmb2xkZXJfbmFtZX1fc3ViX3tzdWJfaW5kZXh9LnZ0dCIpCiAgICAgICAgICAgICAgICBzYyA9IFsiZmZtcGVnIiwiLXkiXStleHRyYStbIi1pIixzb3VyY2UsIi1tYXAiLGYiMDpzOntzdWJfaW5kZXh9IiwiLWM6cyIsIndlYnZ0dCIsdnBdCiAgICAgICAgICAgICAgICB0cnk6IHN1YnByb2Nlc3MucnVuKHNjLCBjYXB0dXJlX291dHB1dD1UcnVlLCBjaGVjaz1UcnVlLCB0aW1lb3V0PTEyMCkKICAgICAgICAgICAgICAgIGV4Y2VwdCBFeGNlcHRpb24gYXMgZTogbG9nX2Z1bmMoZiJFcnJvciBzdWI6IHtlfSIpCiAgICAgICAgICAgIHJldHVybiBUcnVlLCAiT0siLCBvdXRfZm9sZGVyCiAgICAgICAgZXhjZXB0IEV4Y2VwdGlvbiBhcyBlOgogICAgICAgICAgICBpbXBvcnQgdHJhY2ViYWNrOyB0cmFjZWJhY2sucHJpbnRfZXhjKCkKICAgICAgICAgICAgcmV0dXJuIEZhbHNlLCBzdHIoZSksIE5vbmUKCmRlZiBnZXRfdXNlcl9tb2RlbHModG9rZW4pOgogICAgaWYgbm90IHRva2VuOiByZXR1cm4gZ3IudXBkYXRlKGNob2ljZXM9W10sIGludGVyYWN0aXZlPVRydWUpCiAgICB0cnk6CiAgICAgICAgYXBpID0gSGZBcGkodG9rZW49dG9rZW4pCiAgICAgICAgdW5hbWUgPSBhcGkud2hvYW1pKHRva2VuPXRva2VuKVsibmFtZSJdCiAgICAgICAgY2hvaWNlcyA9IFttLm1vZGVsSWQgZm9yIG0gaW4gbGlzdChsaXN0X21vZGVscyh0b2tlbj10b2tlbiwgYXV0aG9yPXVuYW1lLCBsaW1pdD0xMDApKV0KICAgICAgICByZXR1cm4gZ3IudXBkYXRlKGNob2ljZXM9Y2hvaWNlcywgdmFsdWU9Y2hvaWNlc1swXSBpZiBjaG9pY2VzIGVsc2UgTm9uZSwgaW50ZXJhY3RpdmU9VHJ1ZSkKICAgIGV4Y2VwdDogcmV0dXJuIGdyLnVwZGF0ZShjaG9pY2VzPVtdLCBpbnRlcmFjdGl2ZT1UcnVlKQoKZGVmIHVwbG9hZF90b19oZihmb2xkZXJfcGF0aCwgcmVwb19pZCwgdG9rZW4sIGxvZ19mdW5jPXByaW50KToKICAgIHRyeToKICAgICAgICBhcGkgPSBIZkFwaSh0b2tlbj10b2tlbikKICAgICAgICBycCA9IGYidmlkZW9zL3tvcy5wYXRoLmJhc2VuYW1lKGZvbGRlcl9wYXRoKX0iCiAgICAgICAgYXBpLnVwbG9hZF9mb2xkZXIoZm9sZGVyX3BhdGg9Zm9sZGVyX3BhdGgsIHJlcG9faWQ9cmVwb19pZCwgcmVwb190eXBlPSJtb2RlbCIsIHBhdGhfaW5fcmVwbz1ycCkKICAgICAgICByZXR1cm4gVHJ1ZSwgZiJTdWJpZG8gYSB7cmVwb19pZH0ve3JwfSIKICAgIGV4Y2VwdCBFeGNlcHRpb24gYXMgZTogcmV0dXJuIEZhbHNlLCBzdHIoZSkKCmNvbnZlcnRlciA9IFZpZGVvQ29udmVydGVyKCkKCmRlZiBhbmFseXplX21lZGlhKGZpbGVfaW5wdXQsIHVybF9pbnB1dCk6CiAgICBzb3VyY2UgPSBmaWxlX2lucHV0Lm5hbWUgaWYgZmlsZV9pbnB1dCBlbHNlICh1cmxfaW5wdXQgaWYgdXJsX2lucHV0IGVsc2UgTm9uZSkKICAgIGlmIG5vdCBzb3VyY2U6IHJldHVybiBOb25lLCBOb25lLCAiU2luIGZ1ZW50ZS4iCiAgICBpbmZvID0gTWVkaWFBbmFseXplci5nZXRfbWVkaWFfaW5mbyhzb3VyY2UpCiAgICBhYyA9IFtmIntpfToge3QuZGlzcGxheV9uYW1lKCl9IiBmb3IgaSx0IGluIGVudW1lcmF0ZShpbmZvLmF1ZGlvX3RyYWNrcyldCiAgICBzYyA9IFtmIntpfToge3QuZGlzcGxheV9uYW1lKCl9IiBmb3IgaSx0IGluIGVudW1lcmF0ZShpbmZvLnN1YnRpdGxlX3RyYWNrcyldCiAgICB0eHQgPSBmIkFuYWxpemFkbzoge2luZm8udGl0bGUgb3Igb3MucGF0aC5iYXNlbmFtZShzb3VyY2UpfVxuRHVyYWNpb246IHtpbmZvLmR1cmF0aW9uOi4xZn1zXG5BdWRpb3M6IHtsZW4oaW5mby5hdWRpb190cmFja3MpfSB8IFN1YnM6IHtsZW4oaW5mby5zdWJ0aXRsZV90cmFja3MpfSIKICAgIHJldHVybiAoZ3IudXBkYXRlKGNob2ljZXM9YWMsdmFsdWU9YWNbMF0gaWYgYWMgZWxzZSBOb25lLGludGVyYWN0aXZlPVRydWUpLAogICAgICAgICAgICBnci51cGRhdGUoY2hvaWNlcz1zYyx2YWx1ZT1zY1swXSBpZiBzYyBlbHNlIE5vbmUsaW50ZXJhY3RpdmU9VHJ1ZSksIHR4dCkKCmRlZiBwcm9jZXNzX2FuZF91cGxvYWQoZmlsZV9pbnB1dCwgdXJsX2lucHV0LCB0b2tlbiwgdGFyZ2V0X21vZGVsLCBtb2RlLAogICAgICAgICAgICAgICAgICAgICAgIGF1ZGlvX2lkeF9zdHIsIHN1Yl9pZHhfc3RyLCBnZW5lcmF0ZV9zaW5nbGUsIGV4dHJhY3Rfc3ViLCBwcm9ncmVzcz1nci5Qcm9ncmVzcygpKToKICAgIHNvdXJjZSA9IGZpbGVfaW5wdXQubmFtZSBpZiBmaWxlX2lucHV0IGVsc2UgKHVybF9pbnB1dCBpZiB1cmxfaW5wdXQgZWxzZSBOb25lKQogICAgaWYgbm90IHNvdXJjZTogcmV0dXJuICJTaW4gZnVlbnRlLiIsICJFcnJvciIKICAgIGlzX3VybCA9IGJvb2wodXJsX2lucHV0IGFuZCBzb3VyY2UgPT0gdXJsX2lucHV0KQogICAgdHJ5OgogICAgICAgIGFpID0gaW50KGF1ZGlvX2lkeF9zdHIuc3BsaXQoIjoiKVswXSkgaWYgYXVkaW9faWR4X3N0ciBhbmQgIjoiIGluIGF1ZGlvX2lkeF9zdHIgZWxzZSAwCiAgICAgICAgc2kgPSBpbnQoc3ViX2lkeF9zdHIuc3BsaXQoIjoiKVswXSkgICBpZiBzdWJfaWR4X3N0ciAgIGFuZCAiOiIgaW4gc3ViX2lkeF9zdHIgICBlbHNlIDAKICAgIGV4Y2VwdDogcmV0dXJuICJQaXN0YXMgaW52YWxpZGFzLiIsICJFcnJvciIKICAgIGlmIG5vdCB0YXJnZXRfbW9kZWw6IHJldHVybiAiU2VsZWNjaW9uYSByZXBvLiIsICJFcnJvciIKICAgIGxvZ3MgPSBbXQogICAgZGVmIGxvZyhtKTogbG9ncy5hcHBlbmQobSkKICAgIG9rLCBtc2csIG91dF9mb2xkZXIgPSBjb252ZXJ0ZXIuY29udmVydChzb3VyY2UsaXNfdXJsLG1vZGUsIiIsYWksZ2VuZXJhdGVfc2luZ2xlLGV4dHJhY3Rfc3ViLHNpLHByb2dyZXNzPXByb2dyZXNzLGxvZ19mdW5jPWxvZykKICAgIGlmIG5vdCBvazogcmV0dXJuICJcbiIuam9pbihsb2dzKStmIlxue21zZ30iLCAiRmFsbG8iCiAgICB1b2ssIHVtc2cgPSB1cGxvYWRfdG9faGYob3V0X2ZvbGRlciwgdGFyZ2V0X21vZGVsLCB0b2tlbiwgbG9nKQogICAgaWYgb3V0X2ZvbGRlciBhbmQgb3MucGF0aC5leGlzdHMob3V0X2ZvbGRlcik6CiAgICAgICAgdHJ5OiBzaHV0aWwucm10cmVlKG9zLnBhdGguZGlybmFtZShvdXRfZm9sZGVyKSkKICAgICAgICBleGNlcHQ6IHBhc3MKICAgIHJldHVybiAiXG4iLmpvaW4obG9ncykrZiJcbnt1bXNnfSIsICJMaXN0byIgaWYgdW9rIGVsc2UgIkFkdmVydGVuY2lhcyIKCndpdGggZ3IuQmxvY2tzKHRoZW1lPWdyLnRoZW1lcy5Tb2Z0KCksIGNzcz1DVVNUT01fQ1NTKSBhcyBkZW1vOgogICAgZ3IuTWFya2Rvd24oIiMgVmlkZW8gQ29udmVydGVyIFBybyB2Mi4wIikKICAgIHdpdGggZ3IuUm93KCk6CiAgICAgICAgd2l0aCBnci5Db2x1bW4oc2NhbGU9MSk6CiAgICAgICAgICAgIHRva2VuX2luICA9IGdyLlRleHRib3gobGFiZWw9IkhGIFRva2VuIiwgdmFsdWU9b3MuZ2V0ZW52KCJIRl9UT0tFTiIsIiIpLCB0eXBlPSJwYXNzd29yZCIpCiAgICAgICAgICAgIGJ0bl9sb2FkICA9IGdyLkJ1dHRvbigiQ2FyZ2FyIE1vZGVsb3MiLCBzaXplPSJzbSIpCiAgICAgICAgICAgIHRndF9tb2RlbCA9IGdyLkRyb3Bkb3duKGxhYmVsPSJSZXBvc2l0b3JpbyIsIGNob2ljZXM9W10sIGludGVyYWN0aXZlPUZhbHNlKQogICAgICAgICAgICBtb2RlX3IgICAgPSBnci5SYWRpbyhjaG9pY2VzPVsiVmlkZW8gQ29weSArIEF1ZGlvIE1QMyIsIlZpZGVvIENvcHkgKyBBdWRpbyBGTEFDIiwiVmlkZW8gSDI2NCAxMDgwcCArIEF1ZGlvIE1QMyJdLAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICB2YWx1ZT0iVmlkZW8gQ29weSArIEF1ZGlvIE1QMyIsIGxhYmVsPSJNb2RvIikKICAgICAgICAgICAgZ2VuX3NpbmdsZSA9IGdyLkNoZWNrYm94KGxhYmVsPSJBdWRpbyBpbmRpdmlkdWFsIiwgdmFsdWU9RmFsc2UpCiAgICAgICAgICAgIGV4dF9zdWIgICAgPSBnci5DaGVja2JveChsYWJlbD0iRXh0cmFlciBzdWJ0aXR1bG8iLCB2YWx1ZT1GYWxzZSkKICAgICAgICAgICAgYXVkaW9fZGQgICA9IGdyLkRyb3Bkb3duKGxhYmVsPSJQaXN0YSBBdWRpbyIsIGNob2ljZXM9W10pCiAgICAgICAgICAgIHN1Yl9kZCAgICAgPSBnci5Ecm9wZG93bihsYWJlbD0iUGlzdGEgU3ViIiwgY2hvaWNlcz1bXSkKICAgICAgICB3aXRoIGdyLkNvbHVtbihzY2FsZT0yKToKICAgICAgICAgICAgd2l0aCBnci5UYWIoIkFyY2hpdm8iKTogZmkgPSBnci5GaWxlKGxhYmVsPSJWaWRlbyIsIGZpbGVfdHlwZXM9WyJ2aWRlbyJdKQogICAgICAgICAgICB3aXRoIGdyLlRhYigiVVJMIik6ICAgICB1aSA9IGdyLlRleHRib3gobGFiZWw9IlVSTCIsIHBsYWNlaG9sZGVyPSJodHRwczovLy4uLiIpCiAgICAgICAgICAgIGJ0bl9hbiAgPSBnci5CdXR0b24oIkFuYWxpemFyIiwgdmFyaWFudD0ic2Vjb25kYXJ5IikKICAgICAgICAgICAgYW5faW5mbyA9IGdyLlRleHRib3gobGFiZWw9IkluZm8iLCBsaW5lcz0zLCBpbnRlcmFjdGl2ZT1GYWxzZSkKICAgICAgICAgICAgYnRuX3ByICA9IGdyLkJ1dHRvbigiUFJPQ0VTQVIgWSBTVUJJUiIsIHZhcmlhbnQ9InByaW1hcnkiLCBzaXplPSJsZyIpCiAgICAgICAgICAgIGxvZ19vdXQgPSBnci5UZXh0Ym94KGxhYmVsPSJMb2ciLCBsaW5lcz0xNSwgaW50ZXJhY3RpdmU9RmFsc2UpCiAgICBidG5fbG9hZC5jbGljayhmbj1nZXRfdXNlcl9tb2RlbHMsIGlucHV0cz1bdG9rZW5faW5dLCBvdXRwdXRzPVt0Z3RfbW9kZWxdKQogICAgYnRuX2FuLmNsaWNrKGZuPWFuYWx5emVfbWVkaWEsIGlucHV0cz1bZmksdWldLCBvdXRwdXRzPVthdWRpb19kZCxzdWJfZGQsYW5faW5mb10pCiAgICBidG5fcHIuY2xpY2soZm49cHJvY2Vzc19hbmRfdXBsb2FkLCBpbnB1dHM9W2ZpLHVpLHRva2VuX2luLHRndF9tb2RlbCxtb2RlX3IsYXVkaW9fZGQsc3ViX2RkLGdlbl9zaW5nbGUsZXh0X3N1Yl0sCiAgICAgICAgICAgICAgICAgb3V0cHV0cz1bbG9nX291dCxhbl9pbmZvXSkKCmlmIF9fbmFtZV9fID09ICJfX21haW5fXyI6CiAgICBkZW1vLmxhdW5jaCgpCg=="
+          $bytes = [System.Convert]::FromBase64String($b64)
+          [System.IO.File]::WriteAllBytes("C:\scripts\video_converter.py", $bytes)
+          Write-Host "Script 1 escrito: $(Get-Item 'C:\scripts\video_converter.py').Length bytes"
 
-import gradio as gr
-from huggingface_hub import HfApi, list_models
-
-CUSTOM_CSS = """
-body { background-color: #0f0f1a; color: #f8fafc; font-family: 'Segoe UI', sans-serif; }
-.gradio-container { background-color: #0f0f1a !important; color: #f8fafc !important; }
-footer { display: none !important; }
-.gr-button-primary { background-color: #6366f1 !important; border: none !important; color: white !important; }
-.gr-button-primary:hover { background-color: #818cf8 !important; }
-.gr-textbox, .gr-dropdown, .gr-radio { background-color: #252542 !important; color: #f8fafc !important; border: 1px solid #2d2d4a !important; }
-.gr-box { background-color: #1a1a2e !important; border: 1px solid #2d2d4a !important; }
-"""
-
-class AudioTrack:
-    def __init__(self, index, stream_index, codec, language, channels, title=""):
-        self.index = index
-        self.stream_index = stream_index
-        self.codec = codec
-        self.language = language
-        self.channels = channels
-        self.title = title
-
-    def display_name(self):
-        lang = self.language if self.language != "und" else "Unknown"
-        ch = f"{self.channels}ch" if self.channels else ""
-        title_part = f" - {self.title}" if self.title else ""
-        return f"[{self.index}] {lang} | {self.codec} {ch}{title_part}"
-
-class SubtitleTrack:
-    def __init__(self, index, stream_index, codec, language, title="", forced=False):
-        self.index = index
-        self.stream_index = stream_index
-        self.codec = codec
-        self.language = language
-        self.title = title
-        self.forced = forced
-
-    def display_name(self):
-        lang = self.language if self.language != "und" else "Unknown"
-        forced_tag = " (Forced)" if self.forced else ""
-        title_part = f" - {self.title}" if self.title else ""
-        return f"[{self.index}] {lang} | {self.codec}{forced_tag}{title_part}"
-
-class MediaInfo:
-    def __init__(self, path):
-        self.path = path
-        self.audio_tracks: List[AudioTrack] = []
-        self.subtitle_tracks: List[SubtitleTrack] = []
-        self.duration = 0.0
-        self.title: Optional[str] = None
-
-class MediaAnalyzer:
-    @staticmethod
-    def get_media_info(source: str) -> MediaInfo:
-        info = MediaInfo(path=source)
-        try:
-            cmd = ["ffprobe", "-v", "quiet", "-print_format", "json",
-                   "-show_format", "-show_streams", source]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-            if result.returncode != 0: return info
-            data = json.loads(result.stdout)
-            format_tags = data.get("format", {}).get("tags", {})
-            info.title = format_tags.get("title") or format_tags.get("TITLE")
-            if info.title: info.title = info.title.strip()
-            if "format" in data and "duration" in data["format"]:
-                info.duration = float(data["format"]["duration"])
-            audio_idx, sub_idx = 0, 0
-            for stream in data.get("streams", []):
-                codec_type = stream.get("codec_type", "")
-                tags = stream.get("tags", {})
-                if codec_type == "audio":
-                    track = AudioTrack(audio_idx, stream.get("index", 0),
-                                       stream.get("codec_name", "unknown"),
-                                       tags.get("language", "und"),
-                                       stream.get("channels", 2),
-                                       tags.get("title", ""))
-                    info.audio_tracks.append(track)
-                    audio_idx += 1
-                elif codec_type == "subtitle":
-                    disposition = stream.get("disposition", {})
-                    track = SubtitleTrack(sub_idx, stream.get("index", 0),
-                                          stream.get("codec_name", "unknown"),
-                                          tags.get("language", "und"),
-                                          tags.get("title", ""),
-                                          disposition.get("forced", 0) == 1)
-                    info.subtitle_tracks.append(track)
-                    sub_idx += 1
-        except Exception as e:
-            print(f"Error analyzing: {e}")
-        return info
-
-class VideoConverter:
-    def __init__(self):
-        self.current_process = None
-        self.cancelled = False
-
-    def cancel(self):
-        self.cancelled = True
-        if self.current_process:
-            try: self.current_process.terminate()
-            except: pass
-
-    def run_ffmpeg(self, cmd, duration, progress=None, msg=""):
-        try:
-            self.current_process = subprocess.Popen(
-                cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
-            pattern = re.compile(r"time=(\d{2}):(\d{2}):(\d{2})\.(\d{2})")
-            for line in self.current_process.stderr:
-                if self.cancelled: return False, "Cancelado"
-                match = pattern.search(line)
-                if match and duration > 0:
-                    h, m, s, ms = map(int, match.groups())
-                    current = h * 3600 + m * 60 + s + ms / 100
-                    percent = min(100, (current / duration) * 100)
-                    if progress: progress(percent / 100, desc=f"{msg}: {percent:.0f}%")
-            self.current_process.wait()
-            return self.current_process.returncode == 0, "OK"
-        except Exception as e:
-            return False, str(e)
-
-    def convert(self, source, is_url, mode, output_dir,
-                selected_audio, generate_single, extract_sub, sub_index,
-                progress=None, log_func=print):
-        self.cancelled = False
-        temp_folder = None
-        try:
-            extra_input_options = []
-            if is_url:
-                extra_input_options = ["-user_agent", "Mozilla/5.0",
-                                       "-headers", "Referer: https://google.com\r\n"]
-            info = MediaAnalyzer.get_media_info(source)
-            duration = info.duration if info.duration > 0 else 1
-            base_name = info.title if info.title else Path(source).stem
-            if not base_name or base_name.strip() == "": base_name = "video_sin_nombre"
-            folder_name = re.sub(r'[<>:"/\\|?*]', '_', base_name)
-            folder_name = re.sub(r'\s+', ' ', folder_name).strip().replace(' ', '_')
-            for old, new in [("a","4"),("A","4"),("i","1"),("I","1"),("o","0"),("O","0")]:
-                folder_name = folder_name.replace(old, new)
-            folder_name = folder_name[:150]
-            temp_folder = tempfile.mkdtemp(prefix="video_conv_")
-            out_folder = os.path.join(temp_folder, folder_name)
-            os.makedirs(out_folder, exist_ok=True)
-            log_func(f"Carpeta creada: {folder_name}")
-
-            all_audio_path = os.path.join(out_folder, f"{folder_name}_all_audio.mp4")
-            cmd = ["ffmpeg", "-y"] + extra_input_options + ["-i", source]
-            cmd.extend(["-map", "0:v:0"])
-            for i in range(len(info.audio_tracks)):
-                cmd.extend(["-map", f"0:a:{i}"])
-            cmd.extend(["-c:v", "copy"])
-            if mode == "Video Copy + Audio MP3":
-                for i in range(len(info.audio_tracks)):
-                    cmd.extend([f"-c:a:{i}", "libmp3lame", f"-b:a:{i}", "320k", f"-ar:a:{i}", "48000"])
-            elif mode == "Video Copy + Audio FLAC":
-                for i in range(len(info.audio_tracks)):
-                    cmd.extend([f"-c:a:{i}", "flac", f"-compression_level:a:{i}", "0"])
-            else:
-                cmd = ["ffmpeg", "-y"] + extra_input_options + ["-i", source]
-                cmd.extend(["-map", "0:v:0"])
-                for i in range(len(info.audio_tracks)):
-                    cmd.extend(["-map", f"0:a:{i}"])
-                cmd.extend(["-c:v", "libx264", "-vf", "scale=-2:1080", "-preset", "slow", "-crf", "18"])
-                for i in range(len(info.audio_tracks)):
-                    cmd.extend([f"-c:a:{i}", "libmp3lame", f"-b:a:{i}", "320k", f"-ar:a:{i}", "48000"])
-            cmd.extend(["-map_metadata", "0", "-metadata", "copyright=Power Prods", all_audio_path])
-            success, msg_r = self.run_ffmpeg(cmd, duration, progress, "Renderizado")
-            if not success or self.cancelled:
-                return False, f"Error: {msg_r}", None
-
-            if generate_single is True and selected_audio < len(info.audio_tracks):
-                single_path = os.path.join(out_folder, f"{folder_name}_audio_{selected_audio}.mp4")
-                single_cmd = ["ffmpeg", "-y", "-i", all_audio_path,
-                               "-map", "0:v:0", "-map", f"0:a:{selected_audio}",
-                               "-c", "copy", "-map_metadata", "0", single_path]
-                self.run_ffmpeg(single_cmd, duration, progress, "Extraccion")
-
-            if extract_sub is True and info.subtitle_tracks and sub_index < len(info.subtitle_tracks):
-                vtt_path = os.path.join(out_folder, f"{folder_name}_sub_{sub_index}.vtt")
-                sub_cmd = ["ffmpeg", "-y"] + extra_input_options + [
-                    "-i", source, "-map", f"0:s:{sub_index}", "-c:s", "webvtt", vtt_path]
-                try:
-                    subprocess.run(sub_cmd, capture_output=True, check=True, timeout=120)
-                except Exception as e:
-                    log_func(f"Error subtitulo: {e}")
-
-            return True, "Conversion completada", out_folder
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            return False, f"Error critico: {e}", None
-
-def get_user_models(token):
-    if not token:
-        return gr.update(choices=[], value=None, interactive=True)
-    try:
-        api = HfApi(token=token)
-        user_info = api.whoami(token=token)
-        username = user_info["name"]
-        models = list(list_models(token=token, author=username, limit=100))
-        choices = [m.modelId for m in models]
-        return gr.update(choices=choices, value=choices[0] if choices else None, interactive=True)
-    except Exception as e:
-        return gr.update(choices=[], interactive=True)
-
-def upload_to_hf(folder_path, repo_id, token, log_func=print):
-    try:
-        api = HfApi(token=token)
-        folder_name = os.path.basename(folder_path)
-        repo_path = f"videos/{folder_name}"
-        api.upload_folder(folder_path=folder_path, repo_id=repo_id,
-                          repo_type="model", path_in_repo=repo_path)
-        return True, f"Subido a {repo_id}/{repo_path}"
-    except Exception as e:
-        return False, f"Error subiendo: {e}"
-
-converter = VideoConverter()
-
-def analyze_media(file_input, url_input):
-    source = None; is_url = False
-    if file_input: source = file_input.name
-    elif url_input: source = url_input; is_url = True
-    else: return None, None, "Sin fuente."
-    info = MediaAnalyzer.get_media_info(source)
-    audio_choices = [f"{i}: {t.display_name()}" for i, t in enumerate(info.audio_tracks)]
-    sub_choices   = [f"{i}: {t.display_name()}" for i, t in enumerate(info.subtitle_tracks)]
-    text = (f"Analizado: {info.title or os.path.basename(source)}\n"
-            f"Duracion: {info.duration:.1f}s\n"
-            f"Audios: {len(info.audio_tracks)} | Subs: {len(info.subtitle_tracks)}")
-    return (gr.update(choices=audio_choices, value=audio_choices[0] if audio_choices else None, interactive=True),
-            gr.update(choices=sub_choices,   value=sub_choices[0]   if sub_choices   else None, interactive=True),
-            text)
-
-def process_and_upload(file_input, url_input, token, target_model, mode,
-                       audio_idx_str, sub_idx_str, generate_single, extract_sub,
-                       progress=gr.Progress()):
-    source = None; is_url = False
-    if file_input: source = file_input.name
-    elif url_input: source = url_input; is_url = True
-    else: return "Sin fuente.", "Error"
-    try:
-        audio_idx = int(audio_idx_str.split(":")[0]) if audio_idx_str and ":" in audio_idx_str else 0
-        sub_idx   = int(sub_idx_str.split(":")[0])   if sub_idx_str   and ":" in sub_idx_str   else 0
-    except:
-        return "Pistas invalidas.", "Error"
-    if not target_model: return "Selecciona repo destino.", "Error"
-    logs = []
-    def log(m): logs.append(m); print(m)
-    success, msg, out_folder = converter.convert(
-        source, is_url, mode, "", audio_idx, generate_single,
-        extract_sub, sub_idx, progress=progress, log_func=log)
-    if not success:
-        return "\n".join(logs) + "\n" + msg, "Fallo"
-    upload_success, upload_msg = upload_to_hf(out_folder, target_model, token, log)
-    if out_folder and os.path.exists(out_folder):
-        try: shutil.rmtree(os.path.dirname(out_folder))
-        except: pass
-    return "\n".join(logs) + "\n" + upload_msg, "Listo" if upload_success else "Con advertencias"
-
-with gr.Blocks(theme=gr.themes.Soft(), css=CUSTOM_CSS) as demo:
-    gr.Markdown("# Video Converter Pro v2.0")
-    with gr.Row():
-        with gr.Column(scale=1):
-            token_input    = gr.Textbox(label="HF Token", value=os.getenv("HF_TOKEN",""), type="password")
-            btn_load       = gr.Button("Cargar Modelos", size="sm")
-            target_model   = gr.Dropdown(label="Repositorio Destino", choices=[], interactive=False)
-            mode_radio     = gr.Radio(
-                choices=["Video Copy + Audio MP3","Video Copy + Audio FLAC","Video H264 1080p + Audio MP3"],
-                value="Video Copy + Audio MP3", label="Modo")
-            gen_single_cb  = gr.Checkbox(label="Generar version audio individual", value=False)
-            extract_sub_cb = gr.Checkbox(label="Extraer subtitulo", value=False)
-            audio_dd       = gr.Dropdown(label="Pista Audio", choices=[])
-            sub_dd         = gr.Dropdown(label="Pista Subtitulo", choices=[])
-        with gr.Column(scale=2):
-            with gr.Tab("Archivo"): file_input = gr.File(label="Subir Video", file_types=["video"])
-            with gr.Tab("URL"):     url_input  = gr.Textbox(label="Enlace", placeholder="https://...")
-            btn_analyze   = gr.Button("Analizar", variant="secondary")
-            analysis_info = gr.Textbox(label="Info", lines=3, interactive=False)
-            btn_process   = gr.Button("PROCESAR Y SUBIR", variant="primary", size="lg")
-            log_output    = gr.Textbox(label="Log", lines=15, interactive=False)
-    btn_load.click(fn=get_user_models, inputs=[token_input], outputs=[target_model])
-    btn_analyze.click(fn=analyze_media, inputs=[file_input, url_input],
-                      outputs=[audio_dd, sub_dd, analysis_info])
-    btn_process.click(fn=process_and_upload,
-                      inputs=[file_input, url_input, token_input, target_model, mode_radio,
-                              audio_dd, sub_dd, gen_single_cb, extract_sub_cb],
-                      outputs=[log_output, analysis_info])
-
-if __name__ == "__main__":
-    demo.launch()
-'@
-          Set-Content -Path "C:\scripts\video_converter.py" -Value $code -Encoding UTF8
-          Write-Host "✅ Script 1 escrito en C:\scripts\video_converter.py"
-        shell: powershell
-
-      # =========================================================
-      # 8. ESCRIBIR CÓDIGO 2 — HLS/DASH Converter EXTREME
-      # =========================================================
+      # =======================================================
+      # 8. ESCRIBIR SCRIPT 2 (base64 decode - sin here-string)
+      # =======================================================
       - name: Write Script 2 - HLS DASH Converter EXTREME
+        shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path "C:\scripts" | Out-Null
-          $code = @'
-import gradio as gr
-import subprocess
-import os
-import json
-import re
-import shutil
-from pathlib import Path
-from urllib.parse import urlparse, unquote
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import tempfile
-import requests
-import psutil
+          $b64 = "aW1wb3J0IGdyYWRpbyBhcyBncgppbXBvcnQgc3VicHJvY2VzcwppbXBvcnQgb3MKaW1wb3J0IGpzb24KaW1wb3J0IHJlCmltcG9ydCBzaHV0aWwKZnJvbSBwYXRobGliIGltcG9ydCBQYXRoCmZyb20gY29uY3VycmVudC5mdXR1cmVzIGltcG9ydCBUaHJlYWRQb29sRXhlY3V0b3IsIGFzX2NvbXBsZXRlZAppbXBvcnQgdGVtcGZpbGUKaW1wb3J0IHJlcXVlc3RzCmltcG9ydCBwc3V0aWwKCmRlZiBzZXR1cF9yYW1kaXNrKCk6CiAgICB0cnk6CiAgICAgICAgcCA9IFBhdGgoIi9kZXYvc2htL3ZpZGVvX3Byb2Nlc3NpbmciKTsgcC5ta2RpcihleGlzdF9vaz1UcnVlLCBwYXJlbnRzPVRydWUpOyByZXR1cm4gcAogICAgZXhjZXB0OgogICAgICAgIHAgPSBQYXRoKHRlbXBmaWxlLmdldHRlbXBkaXIoKSkgLyAidmlkZW9fcHJvY2Vzc2luZyI7IHAubWtkaXIoZXhpc3Rfb2s9VHJ1ZSk7IHJldHVybiBwCgpkZWYgZ2V0X29wdGltYWxfdGhyZWFkcygpOgogICAgdHJ5OiByZXR1cm4gbWF4KGxlbihvcy5zY2hlZF9nZXRhZmZpbml0eSgwKSkgLSAxLCAxKQogICAgZXhjZXB0OiByZXR1cm4gbWF4KChvcy5jcHVfY291bnQoKSBvciA0KSAtIDEsIDEpCgpSQU1ESVNLX1BBVEggICAgPSBzZXR1cF9yYW1kaXNrKCkKT1BUSU1BTF9USFJFQURTID0gZ2V0X29wdGltYWxfdGhyZWFkcygpCnByaW50KGYiQ1BVOntPUFRJTUFMX1RIUkVBRFN9IHwgUkFNOntSQU1ESVNLX1BBVEh9IikKCmZvciBnYyBpbiBbWyJnaXQiLCJjb25maWciLCItLWdsb2JhbCIsInVzZXIuZW1haWwiLCJhY3Rpb25zQGdpdGh1Yi5jb20iXSwKICAgICAgICAgICBbImdpdCIsImNvbmZpZyIsIi0tZ2xvYmFsIiwidXNlci5uYW1lIiwiR0ggU3BhY2UiXSwKICAgICAgICAgICBbImdpdCIsImNvbmZpZyIsIi0tZ2xvYmFsIiwiY29yZS5jb21wcmVzc2lvbiIsIjAiXSwKICAgICAgICAgICBbImdpdCIsImNvbmZpZyIsIi0tZ2xvYmFsIiwicGFjay50aHJlYWRzIixzdHIoT1BUSU1BTF9USFJFQURTKV1dOgogICAgc3VicHJvY2Vzcy5ydW4oZ2MsIGNoZWNrPUZhbHNlLCBzdGRvdXQ9c3VicHJvY2Vzcy5ERVZOVUxMLCBzdGRlcnI9c3VicHJvY2Vzcy5ERVZOVUxMKQoKZGVmIGlzX2xpdmVfc3RyZWFtKHNyYyk6CiAgICBpZiBub3Qgc3JjLnN0YXJ0c3dpdGgoKCJodHRwOi8vIiwiaHR0cHM6Ly8iKSk6IHJldHVybiBGYWxzZQogICAgaWYgYW55KHNyYy5sb3dlcigpLmVuZHN3aXRoKGUpIGZvciBlIGluIFsiLm1wNCIsIi5ta3YiLCIuYXZpIiwiLm1vdiIsIi53bXYiLCIuZmx2IiwiLndlYm0iLCIudHMiXSk6IHJldHVybiBGYWxzZQogICAgcmV0dXJuIGFueShwIGluIHNyYy5sb3dlcigpIGZvciBwIGluIFsiL2xpdmUvIiwiL3N0cmVhbS8iLCIubTN1OCIsIi5tcGQiLCIvaGxzLyIsIi9kYXNoLyJdKQoKZGVmIGdldF9pbnB1dF9hcmdzKHNyYyk6CiAgICB1YSA9ICJNb3ppbGxhLzUuMCAoV2luZG93cyBOVCAxMC4wOyBXaW42NDsgeDY0KSBBcHBsZVdlYktpdC81MzcuMzYiCiAgICBpZiBub3Qgc3JjLnN0YXJ0c3dpdGgoKCJodHRwOi8vIiwiaHR0cHM6Ly8iKSk6CiAgICAgICAgcmV0dXJuIFsiLWFuYWx5emVkdXJhdGlvbiIsIjEwMDAwMDAwMCIsIi1wcm9iZXNpemUiLCIxMDAwMDAwMDAiLCItZmZsYWdzIiwiK2dlbnB0cytpZ25kdHMiXQogICAgaWYgaXNfbGl2ZV9zdHJlYW0oc3JjKToKICAgICAgICByZXR1cm4gWyItdXNlcl9hZ2VudCIsdWEsIi10aW1lb3V0IiwiMTAwMDAwMDAiLCItcmVjb25uZWN0IiwiMSIsIi1yZWNvbm5lY3Rfc3RyZWFtZWQiLCIxIiwKICAgICAgICAgICAgICAgICItcmVjb25uZWN0X2RlbGF5X21heCIsIjUiLCItZmZsYWdzIiwiK2Zhc3RzZWVrK2dlbnB0cyIsIi1wcm9iZXNpemUiLCI1ME0iLCItYW5hbHl6ZWR1cmF0aW9uIiwiMjBNIl0KICAgIHJldHVybiBbIi11c2VyX2FnZW50Iix1YSwiLXRpbWVvdXQiLCIzMDAwMDAwMCIsIi1yZWNvbm5lY3QiLCIxIiwiLXJlY29ubmVjdF9zdHJlYW1lZCIsIjEiLAogICAgICAgICAgICAiLXJlY29ubmVjdF9kZWxheV9tYXgiLCI1IiwiLWFuYWx5emVkdXJhdGlvbiIsIjIwMDAwMDAwMCIsIi1wcm9iZXNpemUiLCIyMDAwMDAwMDAiLAogICAgICAgICAgICAiLWZmbGFncyIsIitnZW5wdHMraWduZHRzIiwiLWVycl9kZXRlY3QiLCJpZ25vcmVfZXJyIiwiLW1heF9kZWxheSIsIjUwMDAwMDAiLCItcndfdGltZW91dCIsIjMwMDAwMDAwIl0KCmRlZiBnZXRfY29weV9hcmdzKCk6CiAgICByZXR1cm4gWyItbWF4X211eGluZ19xdWV1ZV9zaXplIiwiOTk5OSIsIi1hdm9pZF9uZWdhdGl2ZV90cyIsIm1ha2VfemVybyIsCiAgICAgICAgICAgICItZmZsYWdzIiwiK2dlbnB0cytpZ25kdHMrZmx1c2hfcGFja2V0cyIsIi1jb3B5dGIiLCIxIiwiLXN0YXJ0X2F0X3plcm8iLAogICAgICAgICAgICAiLXRocmVhZHMiLHN0cihPUFRJTUFMX1RIUkVBRFMpLCItdGhyZWFkX3F1ZXVlX3NpemUiLCI0MDk2Il0KCmRlZiBnZXRfcmVuZGVyX2FyZ3MoKToKICAgIHJldHVybiBbIi10aHJlYWRzIixzdHIoT1BUSU1BTF9USFJFQURTKSwiLXRocmVhZF90eXBlIiwic2xpY2UrZnJhbWUiLAogICAgICAgICAgICAiLXNsaWNlcyIsc3RyKE9QVElNQUxfVEhSRUFEUyksIi1tYXhfbXV4aW5nX3F1ZXVlX3NpemUiLCI5OTk5IiwiLXRocmVhZF9xdWV1ZV9zaXplIiwiNDA5NiJdCgpkZWYgY2xlYW5fZm9sZGVyKG4pOiByZXR1cm4gcmUuc3ViKHInWzw+OiIvXFx8PypdJywnXycsbikuc3RyaXAoKVs6MjAwXQpkZWYgY2xlYW5fcmVwbyhuKToKICAgIG4gPSByZS5zdWIocidbXmEtekEtWjAtOV8tXScsJy0nLG4pCiAgICByZXR1cm4gcmUuc3ViKHInLSsnLCctJyxuKS5zdHJpcCgnLScpWzoxMDBdCgpkZWYgYnVpbGRfbmFtZShjdHlwZSwgbW5hbWUsIHNuYW1lLCBzZWFzb24sIGVwX3N0YXJ0LCBlcF9pZHgpOgogICAgaWYgY3R5cGUgPT0gIlBlbGljdWxhIjoKICAgICAgICBiID0gbW5hbWUuc3RyaXAoKSBvciAiUGVsaWN1bGEiOyByZXR1cm4gY2xlYW5fZm9sZGVyKGIpLCBjbGVhbl9yZXBvKGIpCiAgICBuID0gc25hbWUuc3RyaXAoKSBvciAiU2VyaWUiCiAgICB0cnk6IHQgPSBpbnQoc2Vhc29uKQogICAgZXhjZXB0OiB0ID0gMQogICAgdHJ5OiBlcCA9IGludChlcF9zdGFydCkgKyBlcF9pZHgKICAgIGV4Y2VwdDogZXAgPSBlcF9pZHggKyAxCiAgICBsYmwgPSBmIntufV9Ue3R9X0Vwe2VwfSI7IHJldHVybiBjbGVhbl9mb2xkZXIobGJsKSwgY2xlYW5fcmVwbyhsYmwpCgpkZWYgZGV0ZWN0X2R1cmF0aW9uKHNyYywgaWFyZ3MpOgogICAgY21kID0gWyJmZnByb2JlIiwiLXYiLCJlcnJvciJdICsgaWFyZ3MgKyBbIi1zaG93X2VudHJpZXMiLCJmb3JtYXQ9ZHVyYXRpb24iLCItb2YiLCJqc29uIiwiLWkiLHNyY10KICAgIHRyeToKICAgICAgICByID0gc3VicHJvY2Vzcy5ydW4oY21kLCBjYXB0dXJlX291dHB1dD1UcnVlLCB0ZXh0PVRydWUsIHRpbWVvdXQ9MTIwKQogICAgICAgIGQgPSBqc29uLmxvYWRzKHIuc3Rkb3V0KS5nZXQoImZvcm1hdCIse30pLmdldCgiZHVyYXRpb24iKQogICAgICAgIHJldHVybiBmbG9hdChkKSBpZiBkIGFuZCBkICE9ICJOL0EiIGVsc2UgTm9uZQogICAgZXhjZXB0OiByZXR1cm4gTm9uZQoKZGVmIGRldGVjdF9hdWRpbyhzcmMsIGlhcmdzKToKICAgIGNtZCA9IFsiZmZwcm9iZSIsIi12IiwiZXJyb3IiXSArIGlhcmdzICsgWyItc2VsZWN0X3N0cmVhbXMiLCJhIiwKICAgICAgICAgICAiLXNob3dfZW50cmllcyIsInN0cmVhbT1pbmRleCxjb2RlY19uYW1lOnN0cmVhbV90YWdzPWxhbmd1YWdlLHRpdGxlIiwiLW9mIiwianNvbiIsIi1pIixzcmNdCiAgICB0cnk6CiAgICAgICAgciA9IHN1YnByb2Nlc3MucnVuKGNtZCwgY2FwdHVyZV9vdXRwdXQ9VHJ1ZSwgdGV4dD1UcnVlLCB0aW1lb3V0PTEyMCkKICAgICAgICByZXR1cm4gW3siaW5kZXgiOnMuZ2V0KCJpbmRleCIsMCksImxhbmd1YWdlIjpzLmdldCgidGFncyIse30pLmdldCgibGFuZ3VhZ2UiLCJ1bmQiKSwKICAgICAgICAgICAgICAgICAidGl0bGUiOnMuZ2V0KCJ0YWdzIix7fSkuZ2V0KCJ0aXRsZSIsZiJBdWRpbyB7cy5nZXQoJ2luZGV4JywwKX0iKSwiY29kZWMiOnMuZ2V0KCJjb2RlY19uYW1lIiwidW5rIil9CiAgICAgICAgICAgICAgICBmb3IgcyBpbiBqc29uLmxvYWRzKHIuc3Rkb3V0KS5nZXQoInN0cmVhbXMiLFtdKV0KICAgIGV4Y2VwdDogcmV0dXJuIFtdCgpkZWYgcHJpb3JpdGl6ZSh0cmFja3MpOgogICAgcHJpID0gWyJzcGEiLCJlcyIsInNwYW5pc2giLCJlc3Bhbm9sIiwibGF0aW5vIiwibGF0IiwiZXMtbXgiLCJlcy00MTkiXQogICAgZGVmIGtleSh0KToKICAgICAgICBsPXRbImxhbmd1YWdlIl0ubG93ZXIoKTsgdGk9dFsidGl0bGUiXS5sb3dlcigpCiAgICAgICAgZm9yIHAgaW4gcHJpOgogICAgICAgICAgICBpZiBwIGluIGwgb3IgcCBpbiB0aTogcmV0dXJuIDAKICAgICAgICByZXR1cm4gMSBpZiBsPT0idW5kIiBlbHNlIDIKICAgIHJldHVybiBzb3J0ZWQodHJhY2tzLCBrZXk9a2V5KQoKZGVmIGNyZWF0ZV9tYXN0ZXIob3V0ZGlyLCB2c3RyZWFtcywgYXBsYXlsaXN0cyk6CiAgICBjID0gIiNFWFRNM1VcbiNFWFQtWC1WRVJTSU9OOjdcblxuIgogICAgZm9yIGFwIGluIGFwbGF5bGlzdHM6CiAgICAgICAgZCA9ICJZRVMiIGlmIGFwWyJpc19kZWZhdWx0Il0gZWxzZSAiTk8iCiAgICAgICAgYyArPSBmJyNFWFQtWC1NRURJQTpUWVBFPUFVRElPLEdST1VQLUlEPSJhdWRpbyIsTkFNRT0ie2FwWyJ0aXRsZSJdfSIsTEFOR1VBR0U9InthcFsibGFuZ3VhZ2UiXX0iLERFRkFVTFQ9e2R9LEFVVE9TRUxFQ1Q9e2R9LFVSST0ie2FwWyJmaWxlIl19IlxuJwogICAgYyArPSAiXG4iCiAgICBmb3IgdiBpbiB2c3RyZWFtczoKICAgICAgICBjICs9IGYnI0VYVC1YLVNUUkVBTS1JTkY6QkFORFdJRFRIPXt2WyJiYW5kd2lkdGgiXX0sUkVTT0xVVElPTj17dlsicmVzb2x1dGlvbiJdfSxDT0RFQ1M9Int2WyJjb2RlY3MiXX0iLEFVRElPPSJhdWRpbyJcbnt2WyJmaWxlIl19XG4nCiAgICAob3V0ZGlyIC8gIm1hc3Rlci5tM3U4Iikud3JpdGVfdGV4dChjKQoKZGVmIHByb2Nlc3NfYXVkaW8oYXJncyk6CiAgICB0cmFjaywgaSwgdG90YWwsIHNyYywgb3V0ZGlyLCBfLCBpYXJncyA9IGFyZ3MKICAgIHRkID0gUkFNRElTS19QQVRIIC8gZiJhdWRfe29zLmdldHBpZCgpfV97aX0iCiAgICB0cnk6CiAgICAgICAgdGQubWtkaXIoZXhpc3Rfb2s9VHJ1ZSkKICAgICAgICBhZiA9IHRkIC8gZiJhdWRpb197aX0ubTN1OCI7IHNlZyA9IHRkIC8gZiJhdWRpb197aX1fJTAzZC50cyIKICAgICAgICBjbWQgPSAoWyJmZm1wZWciLCItaGlkZV9iYW5uZXIiLCItdGhyZWFkcyIsc3RyKE9QVElNQUxfVEhSRUFEUyldICsgaWFyZ3MKICAgICAgICAgICAgICAgKyBbIi1pIixzcmMsIi1tYXAiLGYiMDp7dHJhY2tbJ2luZGV4J119IiwKICAgICAgICAgICAgICAgICAgIi1jOmEiLCJsaWJtcDNsYW1lIiwiLWI6YSIsIjE5MmsiLCItYXIiLCI0ODAwMCIsIi1hYyIsIjIiLAogICAgICAgICAgICAgICAgICAiLXRocmVhZHMiLHN0cihPUFRJTUFMX1RIUkVBRFMpLCItbWF4X211eGluZ19xdWV1ZV9zaXplIiwiOTk5OSIsIi10aHJlYWRfcXVldWVfc2l6ZSIsIjQwOTYiLAogICAgICAgICAgICAgICAgICAiLWhsc190aW1lIiwiNSIsIi1obHNfbGlzdF9zaXplIiwiMCIsIi1obHNfc2VnbWVudF9maWxlbmFtZSIsc3RyKHNlZyksCiAgICAgICAgICAgICAgICAgICItaGxzX2ZsYWdzIiwiaW5kZXBlbmRlbnRfc2VnbWVudHMrYXBwZW5kX2xpc3QrdGVtcF9maWxlIiwKICAgICAgICAgICAgICAgICAgIi1obHNfcGxheWxpc3RfdHlwZSIsInZvZCIsIi1obHNfc2VnbWVudF90eXBlIiwibXBlZ3RzIiwKICAgICAgICAgICAgICAgICAgc3RyKGFmKSwiLXkiLCItbG9nbGV2ZWwiLCJ3YXJuaW5nIl0pCiAgICAgICAgciA9IHN1YnByb2Nlc3MucnVuKGNtZCwgY2FwdHVyZV9vdXRwdXQ9VHJ1ZSwgdGV4dD1UcnVlLCB0aW1lb3V0PTcyMDApCiAgICAgICAgaWYgci5yZXR1cm5jb2RlICE9IDAgb3Igbm90IGFmLmV4aXN0cygpOgogICAgICAgICAgICByZXR1cm4geyJzdWNjZXNzIjpGYWxzZSwiaW5kZXgiOmksImVycm9yIjpyLnN0ZGVyclstMjAwOl0sInRyYWNrIjp0cmFja30KICAgICAgICB0cyA9IGxpc3QodGQuZ2xvYihmImF1ZGlvX3tpfV8qLnRzIikpCiAgICAgICAgaWYgbm90IHRzOiByZXR1cm4geyJzdWNjZXNzIjpGYWxzZSwiaW5kZXgiOmksImVycm9yIjoiTm8gVFMiLCJ0cmFjayI6dHJhY2t9CiAgICAgICAgc2h1dGlsLm1vdmUoc3RyKGFmKSwgc3RyKG91dGRpci9mImF1ZGlvX3tpfS5tM3U4IikpCiAgICAgICAgZm9yIHQyIGluIHRzOiBzaHV0aWwubW92ZShzdHIodDIpLCBzdHIob3V0ZGlyL3QyLm5hbWUpKQogICAgICAgIHJldHVybiB7InN1Y2Nlc3MiOlRydWUsImluZGV4IjppLCJ0cmFjayI6dHJhY2ssInNlZ21lbnRzX2NvdW50IjpsZW4odHMpLAogICAgICAgICAgICAgICAgInBsYXlsaXN0Ijp7ImZpbGUiOmYiYXVkaW9fe2l9Lm0zdTgiLCJsYW5ndWFnZSI6dHJhY2tbImxhbmd1YWdlIl0sCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgInRpdGxlIjp0cmFja1sidGl0bGUiXSwiaXNfZGVmYXVsdCI6aT09MH19CiAgICBleGNlcHQgRXhjZXB0aW9uIGFzIGU6CiAgICAgICAgcmV0dXJuIHsic3VjY2VzcyI6RmFsc2UsImluZGV4IjppLCJlcnJvciI6c3RyKGUpLCJ0cmFjayI6dHJhY2t9CiAgICBmaW5hbGx5OgogICAgICAgIHNodXRpbC5ybXRyZWUodGQsIGlnbm9yZV9lcnJvcnM9VHJ1ZSkKCmRlZiBwcm9jZXNzX2J1bGsodG9rZW4sIGlucHV0X2ZpbGUsIGlucHV0X3VybHMsIGNvbnZfb3B0LCBzdHJlYW1fZm10LAogICAgICAgICAgICAgICAgIGJhdGNoX3N6LCBkZWxfbG9jYWwsIG1heF93a3JzLCBjdHlwZSwgbW5hbWUsIHNuYW1lLCBzZWFzb24sIGVwX3N0YXJ0LAogICAgICAgICAgICAgICAgIHByb2dyZXNzPWdyLlByb2dyZXNzKCkpOgogICAgbG9ncyA9IFtmIkVYVFJFTUUgfCBDUFU6e09QVElNQUxfVEhSRUFEU30gfCBSQU06e1JBTURJU0tfUEFUSH0iXQogICAgdHJ5OgogICAgICAgIGlmIG5vdCB0b2tlbjogcmFpc2UgRXhjZXB0aW9uKCJUb2tlbiBHaXRIdWIgcmVxdWVyaWRvLiIpCiAgICAgICAgc291cmNlcyA9IFtdCiAgICAgICAgZmxpc3QgPSBpbnB1dF9maWxlIGlmIGlzaW5zdGFuY2UoaW5wdXRfZmlsZSwgbGlzdCkgZWxzZSAoW2lucHV0X2ZpbGVdIGlmIGlucHV0X2ZpbGUgZWxzZSBbXSkKICAgICAgICBmb3IgZiBpbiBmbGlzdDogc291cmNlcy5hcHBlbmQoeyJ0eXBlIjoiZmlsZSIsInZhbHVlIjpmLm5hbWV9KQogICAgICAgIGlmIGlucHV0X3VybHM6CiAgICAgICAgICAgIGZvciBsaW5lIGluIGlucHV0X3VybHMuc3BsaXQoIlxuIik6CiAgICAgICAgICAgICAgICB1ID0gbGluZS5zdHJpcCgpCiAgICAgICAgICAgICAgICBpZiB1OiBzb3VyY2VzLmFwcGVuZCh7InR5cGUiOiJ1cmwiLCJ2YWx1ZSI6dX0pCiAgICAgICAgaWYgbm90IHNvdXJjZXM6IHJhaXNlIEV4Y2VwdGlvbigiU2luIGZ1ZW50ZXMuIikKICAgICAgICBmaW5hbF9saW5rcyA9IFtdCiAgICAgICAgZm9yIGlkeCwgc291cmNlIGluIGVudW1lcmF0ZShzb3VyY2VzKToKICAgICAgICAgICAgc3JjID0gc291cmNlWyJ2YWx1ZSJdCiAgICAgICAgICAgIGZuYW1lLCBybmFtZSA9IGJ1aWxkX25hbWUoY3R5cGUsIG1uYW1lLCBzbmFtZSwgc2Vhc29uLCBlcF9zdGFydCwgaWR4KQogICAgICAgICAgICBsb2dzLmFwcGVuZChmIlt7aWR4KzF9L3tsZW4oc291cmNlcyl9XSB7Zm5hbWV9Iik7IHlpZWxkICJcbiIuam9pbihsb2dzKSwgbG9ncywgIiIKICAgICAgICAgICAgaWFyZ3MgPSBnZXRfaW5wdXRfYXJncyhzcmMpCiAgICAgICAgICAgIGR1ciA9IGRldGVjdF9kdXJhdGlvbihzcmMsIGlhcmdzKQogICAgICAgICAgICBpZiBkdXI6CiAgICAgICAgICAgICAgICBoLG0scyA9IGludChkdXIvLzM2MDApLCBpbnQoKGR1ciUzNjAwKS8vNjApLCBpbnQoZHVyJTYwKQogICAgICAgICAgICAgICAgbG9ncy5hcHBlbmQoZiIgIER1cmFjaW9uOiB7aDowMmR9OnttOjAyZH06e3M6MDJkfSIpCiAgICAgICAgICAgIGJhc2VfZGlyID0gUGF0aChzcmMpLnBhcmVudCBpZiBzb3VyY2VbInR5cGUiXT09ImZpbGUiIGVsc2UgUGF0aC5jd2QoKQogICAgICAgICAgICBvdXRkaXIgPSBiYXNlX2RpciAvIGZuYW1lOyBvdXRkaXIubWtkaXIoZXhpc3Rfb2s9VHJ1ZSkKICAgICAgICAgICAgdHJhY2tzID0gZGV0ZWN0X2F1ZGlvKHNyYywgaWFyZ3MpIG9yIFt7ImluZGV4IjowLCJsYW5ndWFnZSI6InVuZCIsInRpdGxlIjoiQXVkaW8iLCJjb2RlYyI6InVuayJ9XQogICAgICAgICAgICB0cmFja3MgPSBwcmlvcml0aXplKHRyYWNrcykKICAgICAgICAgICAgbG9ncy5hcHBlbmQoZiIgIHtsZW4odHJhY2tzKX0gYXVkaW9zIik7IHlpZWxkICJcbiIuam9pbihsb2dzKSwgbG9ncywgIiIKICAgICAgICAgICAgbWFuaWZlc3QgPSAiIgogICAgICAgICAgICBpZiBzdHJlYW1fZm10ID09ICJITFMgKE0zVTgpIjoKICAgICAgICAgICAgICAgIGFhcmdzID0gWyh0LGksbGVuKHRyYWNrcyksc3JjLG91dGRpcixGYWxzZSxpYXJncykgZm9yIGksdCBpbiBlbnVtZXJhdGUodHJhY2tzKV0KICAgICAgICAgICAgICAgIGFwbGF5bGlzdHMgPSBbXQogICAgICAgICAgICAgICAgd2l0aCBUaHJlYWRQb29sRXhlY3V0b3IobWF4X3dvcmtlcnM9bWF4X3drcnMpIGFzIGV4ZToKICAgICAgICAgICAgICAgICAgICBmb3IgZnV0IGluIGFzX2NvbXBsZXRlZCh7ZXhlLnN1Ym1pdChwcm9jZXNzX2F1ZGlvLGEpOmEgZm9yIGEgaW4gYWFyZ3N9KToKICAgICAgICAgICAgICAgICAgICAgICAgcmVzID0gZnV0LnJlc3VsdCgpCiAgICAgICAgICAgICAgICAgICAgICAgIGlmIHJlc1sic3VjY2VzcyJdOgogICAgICAgICAgICAgICAgICAgICAgICAgICAgYXBsYXlsaXN0cy5hcHBlbmQocmVzWyJwbGF5bGlzdCJdKQogICAgICAgICAgICAgICAgICAgICAgICAgICAgbG9ncy5hcHBlbmQoZiIgIEF1ZGlvIHtyZXNbJ2luZGV4J10rMX0gT0sgKHtyZXMuZ2V0KCdzZWdtZW50c19jb3VudCcsMCl9IHNlZ3MpIikKICAgICAgICAgICAgICAgICAgICAgICAgZWxzZToKICAgICAgICAgICAgICAgICAgICAgICAgICAgIGxvZ3MuYXBwZW5kKGYiICBFcnJvciBBdWRpbyB7cmVzWydpbmRleCddKzF9OiB7cmVzLmdldCgnZXJyb3InLCc/JylbOjYwXX0iKQogICAgICAgICAgICAgICAgICAgICAgICB5aWVsZCAiXG4iLmpvaW4obG9ncyksIGxvZ3MsICIiCiAgICAgICAgICAgICAgICBhcGxheWxpc3RzLnNvcnQoa2V5PWxhbWJkYSB4OiBpbnQoeFsiZmlsZSJdLnNwbGl0KCJfIilbMV0uc3BsaXQoIi4iKVswXSkpCiAgICAgICAgICAgICAgICBpZiBub3QgYXBsYXlsaXN0czogcmFpc2UgRXhjZXB0aW9uKCJTaW4gYXVkaW8gcHJvY2VzYWRvIikKICAgICAgICAgICAgICAgIHZzdHJlYW1zID0gW10KICAgICAgICAgICAgICAgIGlmICJDb3B5IiBpbiBjb252X29wdDoKICAgICAgICAgICAgICAgICAgICB0ZCA9IFJBTURJU0tfUEFUSCAvIGYidnRfe2lkeH0iOyB0ZC5ta2RpcihleGlzdF9vaz1UcnVlKQogICAgICAgICAgICAgICAgICAgIHZmID0gdGQvInZpZGVvXzEwODBwLm0zdTgiOyB2cyA9IHRkLyJ2aWRlb18xMDgwcF8lMDNkLnRzIgogICAgICAgICAgICAgICAgICAgIGNtZCA9IChbImZmbXBlZyIsIi1oaWRlX2Jhbm5lciIsIi10aHJlYWRzIixzdHIoT1BUSU1BTF9USFJFQURTKV0gKyBpYXJncwogICAgICAgICAgICAgICAgICAgICAgICAgICArIFsiLWkiLHNyYywiLW1hcCIsIjA6djowIiwiLWM6diIsImNvcHkiLCItYW4iXSArIGdldF9jb3B5X2FyZ3MoKQogICAgICAgICAgICAgICAgICAgICAgICAgICArIFsiLWhsc190aW1lIiwiNSIsIi1obHNfbGlzdF9zaXplIiwiMCIsIi1obHNfc2VnbWVudF9maWxlbmFtZSIsc3RyKHZzKSwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIi1obHNfZmxhZ3MiLCJpbmRlcGVuZGVudF9zZWdtZW50cythcHBlbmRfbGlzdCt0ZW1wX2ZpbGUiLAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAiLWhsc19wbGF5bGlzdF90eXBlIiwidm9kIiwiLWhsc19zZWdtZW50X3R5cGUiLCJtcGVndHMiLHN0cih2ZiksIi15IiwiLWxvZ2xldmVsIiwiZXJyb3IiXSkKICAgICAgICAgICAgICAgICAgICByID0gc3VicHJvY2Vzcy5ydW4oY21kLCBjYXB0dXJlX291dHB1dD1UcnVlLCB0ZXh0PVRydWUsIHRpbWVvdXQ9NzIwMCkKICAgICAgICAgICAgICAgICAgICBpZiByLnJldHVybmNvZGUgIT0gMDogc2h1dGlsLnJtdHJlZSh0ZCxpZ25vcmVfZXJyb3JzPVRydWUpOyByYWlzZSBFeGNlcHRpb24oZiJDb3B5IGVycm9yOiB7ci5zdGRlcnJbLTIwMDpdfSIpCiAgICAgICAgICAgICAgICAgICAgZjEwODAgPSBvdXRkaXIvInZpZGVvXzEwODBwLm0zdTgiCiAgICAgICAgICAgICAgICAgICAgc2h1dGlsLm1vdmUoc3RyKHZmKSwgc3RyKGYxMDgwKSkKICAgICAgICAgICAgICAgICAgICBmb3IgdHMgaW4gdGQuZ2xvYigidmlkZW9fMTA4MHBfKi50cyIpOiBzaHV0aWwubW92ZShzdHIodHMpLCBzdHIob3V0ZGlyL3RzLm5hbWUpKQogICAgICAgICAgICAgICAgICAgIHNodXRpbC5ybXRyZWUodGQsIGlnbm9yZV9lcnJvcnM9VHJ1ZSkKICAgICAgICAgICAgICAgICAgICAob3V0ZGlyLyJ2aWRlb183MjBwLm0zdTgiKS53cml0ZV90ZXh0KGYxMDgwLnJlYWRfdGV4dCgpKQogICAgICAgICAgICAgICAgICAgIHZzdHJlYW1zID0gW3siZmlsZSI6InZpZGVvXzEwODBwLm0zdTgiLCJyZXNvbHV0aW9uIjoiMTkyMHgxMDgwIiwiYmFuZHdpZHRoIjo1MDAwMDAwLCJjb2RlY3MiOiJhdmMxLjY0MDAyOCJ9LAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIHsiZmlsZSI6InZpZGVvXzcyMHAubTN1OCIsInJlc29sdXRpb24iOiIxMjgweDcyMCIsImJhbmR3aWR0aCI6MzAwMDAwMCwiY29kZWNzIjoiYXZjMS42NDAwMjgifV0KICAgICAgICAgICAgICAgIGVsc2U6CiAgICAgICAgICAgICAgICAgICAgcmxpc3QgPSAoW3sibGFiZWwiOiI0SyIsInNjYWxlIjoic2NhbGU9LTI6MjE2MCIsImJyIjoiMTUwMDBrIiwiYnVmc2l6ZSI6IjMwMDAwayIsInJlcyI6IjM4NDB4MjE2MCJ9LAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgeyJsYWJlbCI6IjEwODBwIiwic2NhbGUiOiJzY2FsZT0tMjoxMDgwIiwiYnIiOiI1MDAwayIsImJ1ZnNpemUiOiIxMDAwMGsiLCJyZXMiOiIxOTIweDEwODAifSwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIHsibGFiZWwiOiI3MjBwIiwic2NhbGUiOiJzY2FsZT0tMjo3MjAiLCJiciI6IjI4MDBrIiwiYnVmc2l6ZSI6IjU2MDBrIiwicmVzIjoiMTI4MHg3MjAifV0KICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgaWYgIjRLIiBpbiBjb252X29wdCBlbHNlCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIFt7ImxhYmVsIjoiMTA4MHAiLCJzY2FsZSI6InNjYWxlPS0yOjEwODAiLCJiciI6IjUwMDBrIiwiYnVmc2l6ZSI6IjEwMDAwayIsInJlcyI6IjE5MjB4MTA4MCJ9LAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgeyJsYWJlbCI6IjcyMHAiLCJzY2FsZSI6InNjYWxlPS0yOjcyMCIsImJyIjoiMjgwMGsiLCJidWZzaXplIjoiNTYwMGsiLCJyZXMiOiIxMjgweDcyMCJ9XSkKICAgICAgICAgICAgICAgICAgICBmb3IgcmMgaW4gcmxpc3Q6CiAgICAgICAgICAgICAgICAgICAgICAgIHRkID0gUkFNRElTS19QQVRIL2Yicl97cmNbJ2xhYmVsJ119IjsgdGQubWtkaXIoZXhpc3Rfb2s9VHJ1ZSkKICAgICAgICAgICAgICAgICAgICAgICAgdmYgPSB0ZC9mInZpZGVvX3tyY1snbGFiZWwnXX0ubTN1OCI7IHZzX3NlZyA9IHRkL2YidmlkZW9fe3JjWydsYWJlbCddfV8lMDNkLnRzIgogICAgICAgICAgICAgICAgICAgICAgICBjbWQgPSAoWyJmZm1wZWciLCItaGlkZV9iYW5uZXIiLCItdGhyZWFkcyIsc3RyKE9QVElNQUxfVEhSRUFEUyldICsgaWFyZ3MKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICsgWyItaSIsc3JjLCItbWFwIiwiMDp2OjAiLCItYW4iLCItYzp2IiwibGlieDI2NCIsIi1wcmVzZXQiLCJ1bHRyYWZhc3QiLCItY3JmIiwiMjMiLAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIi12ZiIscmNbInNjYWxlIl0sIi1iOnYiLHJjWyJiciJdLCItbWF4cmF0ZSIscmNbImJyIl0sIi1idWZzaXplIixyY1siYnVmc2l6ZSJdLCItcGl4X2ZtdCIsInl1djQyMHAiXQogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgKyBnZXRfcmVuZGVyX2FyZ3MoKQogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgKyBbIi1obHNfdGltZSIsIjUiLCItaGxzX2xpc3Rfc2l6ZSIsIjAiLCItaGxzX3NlZ21lbnRfZmlsZW5hbWUiLHN0cih2c19zZWcpLAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIi1obHNfZmxhZ3MiLCJpbmRlcGVuZGVudF9zZWdtZW50cythcHBlbmRfbGlzdCt0ZW1wX2ZpbGUiLAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIi1obHNfcGxheWxpc3RfdHlwZSIsInZvZCIsIi1obHNfc2VnbWVudF90eXBlIiwibXBlZ3RzIixzdHIodmYpLCIteSIsIi1sb2dsZXZlbCIsImVycm9yIl0pCiAgICAgICAgICAgICAgICAgICAgICAgIHIgPSBzdWJwcm9jZXNzLnJ1bihjbWQsIGNhcHR1cmVfb3V0cHV0PVRydWUsIHRleHQ9VHJ1ZSwgdGltZW91dD0xNDQwMCkKICAgICAgICAgICAgICAgICAgICAgICAgaWYgci5yZXR1cm5jb2RlICE9IDA6IHNodXRpbC5ybXRyZWUodGQsaWdub3JlX2Vycm9ycz1UcnVlKTsgY29udGludWUKICAgICAgICAgICAgICAgICAgICAgICAgZm0gPSBvdXRkaXIvZiJ2aWRlb197cmNbJ2xhYmVsJ119Lm0zdTgiCiAgICAgICAgICAgICAgICAgICAgICAgIHNodXRpbC5tb3ZlKHN0cih2ZiksIHN0cihmbSkpCiAgICAgICAgICAgICAgICAgICAgICAgIGZvciB0cyBpbiB0ZC5nbG9iKGYidmlkZW9fe3JjWydsYWJlbCddfV8qLnRzIik6IHNodXRpbC5tb3ZlKHN0cih0cyksIHN0cihvdXRkaXIvdHMubmFtZSkpCiAgICAgICAgICAgICAgICAgICAgICAgIHNodXRpbC5ybXRyZWUodGQsIGlnbm9yZV9lcnJvcnM9VHJ1ZSkKICAgICAgICAgICAgICAgICAgICAgICAgdnN0cmVhbXMuYXBwZW5kKHsiZmlsZSI6ZiJ2aWRlb197cmNbJ2xhYmVsJ119Lm0zdTgiLCJyZXNvbHV0aW9uIjpyY1sicmVzIl0sCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgImJhbmR3aWR0aCI6aW50KHJjWyJiciJdLnJlcGxhY2UoImsiLCIwMDAiKSkrMTkyMDAwLCJjb2RlY3MiOiJhdmMxLjY0MDAyOCJ9KQogICAgICAgICAgICAgICAgaWYgbm90IHZzdHJlYW1zOiByYWlzZSBFeGNlcHRpb24oIlNpbiB2aWRlbyIpCiAgICAgICAgICAgICAgICBjcmVhdGVfbWFzdGVyKG91dGRpciwgdnN0cmVhbXMsIGFwbGF5bGlzdHMpOyBtYW5pZmVzdCA9ICJtYXN0ZXIubTN1OCIKICAgICAgICAgICAgZWxpZiBzdHJlYW1fZm10ID09ICJEQVNIIChNUEQpIjoKICAgICAgICAgICAgICAgIHRkID0gUkFNRElTS19QQVRIL2YiZGFzaF97aWR4fSI7IHRkLm1rZGlyKGV4aXN0X29rPVRydWUpCiAgICAgICAgICAgICAgICB2YyA9ICJjb3B5IiBpZiAiQ29weSIgaW4gY29udl9vcHQgZWxzZSAibGlieDI2NCIKICAgICAgICAgICAgICAgIGNtZCA9IChbImZmbXBlZyIsIi1oaWRlX2Jhbm5lciIsIi10aHJlYWRzIixzdHIoT1BUSU1BTF9USFJFQURTKV0gKyBpYXJncwogICAgICAgICAgICAgICAgICAgICAgICsgWyItaSIsc3JjLCItbWFwIiwiMDp2OjAiLCItYzp2OjAiLHZjXSkKICAgICAgICAgICAgICAgIGlmIHZjICE9ICJjb3B5IjogY21kICs9IFsiLXByZXNldCIsInVsdHJhZmFzdCIsIi1jcmYiLCIyMyJdCiAgICAgICAgICAgICAgICBmb3IgaTIsdDIgaW4gZW51bWVyYXRlKHRyYWNrcyk6CiAgICAgICAgICAgICAgICAgICAgY21kICs9IFsiLW1hcCIsZiIwOnt0MlsnaW5kZXgnXX0iLGYiLWM6YTp7aTJ9IiwiYWFjIixmIi1iOmE6e2kyfSIsIjE5MmsiLAogICAgICAgICAgICAgICAgICAgICAgICAgICAgZiItYXI6YTp7aTJ9IiwiNDgwMDAiLGYiLWFjOmE6e2kyfSIsIjIiXQogICAgICAgICAgICAgICAgbXBkID0gdGQvIm1hbmlmZXN0Lm1wZCIKICAgICAgICAgICAgICAgIGNtZCArPSAoZ2V0X2NvcHlfYXJncygpIGlmIHZjPT0iY29weSIgZWxzZSBnZXRfcmVuZGVyX2FyZ3MoKSkKICAgICAgICAgICAgICAgIGNtZCArPSBbIi1mIiwiZGFzaCIsIi1zZWdfZHVyYXRpb24iLCI1IiwiLXVzZV90ZW1wbGF0ZSIsIjEiLCItdXNlX3RpbWVsaW5lIiwiMCIsCiAgICAgICAgICAgICAgICAgICAgICAgICItaW5pdF9zZWdfbmFtZSIsImluaXQtJFJlcHJlc2VudGF0aW9uSUQkLm00cyIsCiAgICAgICAgICAgICAgICAgICAgICAgICItbWVkaWFfc2VnX25hbWUiLCJjaHVuay0kUmVwcmVzZW50YXRpb25JRCQtJE51bWJlciUwNWQkLm00cyIsCiAgICAgICAgICAgICAgICAgICAgICAgIHN0cihtcGQpLCIteSIsIi1sb2dsZXZlbCIsImVycm9yIl0KICAgICAgICAgICAgICAgIHIgPSBzdWJwcm9jZXNzLnJ1bihjbWQsIGNhcHR1cmVfb3V0cHV0PVRydWUsIHRleHQ9VHJ1ZSwgdGltZW91dD0xNDQwMCkKICAgICAgICAgICAgICAgIGlmIHIucmV0dXJuY29kZSAhPSAwOiBzaHV0aWwucm10cmVlKHRkLGlnbm9yZV9lcnJvcnM9VHJ1ZSk7IHJhaXNlIEV4Y2VwdGlvbihmIkRBU0g6IHtyLnN0ZGVyclstMjAwOl19IikKICAgICAgICAgICAgICAgIHNodXRpbC5tb3ZlKHN0cihtcGQpLCBzdHIob3V0ZGlyLyJtYW5pZmVzdC5tcGQiKSkKICAgICAgICAgICAgICAgIGZvciBtNHMgaW4gdGQuZ2xvYigiKi5tNHMiKTogc2h1dGlsLm1vdmUoc3RyKG00cyksIHN0cihvdXRkaXIvbTRzLm5hbWUpKQogICAgICAgICAgICAgICAgc2h1dGlsLnJtdHJlZSh0ZCwgaWdub3JlX2Vycm9ycz1UcnVlKTsgbWFuaWZlc3QgPSAibWFuaWZlc3QubXBkIgogICAgICAgICAgICBoZHJzID0geyJBdXRob3JpemF0aW9uIjpmInRva2VuIHt0b2tlbn0ifQogICAgICAgICAgICByciA9IHJlcXVlc3RzLnBvc3QoImh0dHBzOi8vYXBpLmdpdGh1Yi5jb20vdXNlci9yZXBvcyIsIGhlYWRlcnM9aGRycywKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIGpzb249eyJuYW1lIjpybmFtZSwicHJpdmF0ZSI6VHJ1ZX0sIHRpbWVvdXQ9MzApCiAgICAgICAgICAgIGlmIHJyLnN0YXR1c19jb2RlID09IDQyMjoKICAgICAgICAgICAgICAgIHVuYW1lID0gcmVxdWVzdHMuZ2V0KCJodHRwczovL2FwaS5naXRodWIuY29tL3VzZXIiLGhlYWRlcnM9aGRycykuanNvbigpWyJsb2dpbiJdCiAgICAgICAgICAgICAgICBodG1sX3VybCA9IGYiaHR0cHM6Ly9naXRodWIuY29tL3t1bmFtZX0ve3JuYW1lfSIKICAgICAgICAgICAgZWxzZTogaHRtbF91cmwgPSByci5qc29uKClbImh0bWxfdXJsIl0KICAgICAgICAgICAgZ2l0X3VybCA9IGh0bWxfdXJsLnJlcGxhY2UoImh0dHBzOi8vIixmImh0dHBzOi8ve3Rva2VufUAiKSArICIuZ2l0IgogICAgICAgICAgICBnZCA9IHN0cihvdXRkaXIpCiAgICAgICAgICAgIGZvciBnYyBpbiBbWyJnaXQiLCJpbml0Il0sWyJnaXQiLCJjaGVja291dCIsIi1iIiwibWFpbiJdLFsiZ2l0IiwicmVtb3RlIiwiYWRkIiwib3JpZ2luIixnaXRfdXJsXSwKICAgICAgICAgICAgICAgICAgICAgICBbImdpdCIsImNvbmZpZyIsImh0dHAucG9zdEJ1ZmZlciIsIjUyNDI4ODAwMCJdLFsiZ2l0IiwiY29uZmlnIiwiY29yZS5jb21wcmVzc2lvbiIsIjAiXV06CiAgICAgICAgICAgICAgICBzdWJwcm9jZXNzLnJ1bihnYywgY3dkPWdkLCBjaGVjaz1UcnVlLCBzdGRvdXQ9c3VicHJvY2Vzcy5ERVZOVUxMLCBzdGRlcnI9c3VicHJvY2Vzcy5ERVZOVUxMKQogICAgICAgICAgICBmaWxlcyA9IG9zLmxpc3RkaXIoZ2QpCiAgICAgICAgICAgIGV4dF9zID0gIi5tNHMiIGlmIHN0cmVhbV9mbXQ9PSJEQVNIIChNUEQpIiBlbHNlICIudHMiCiAgICAgICAgICAgIGV4dF9tID0gIi5tcGQiIGlmIHN0cmVhbV9mbXQ9PSJEQVNIIChNUEQpIiBlbHNlICIubTN1OCIKICAgICAgICAgICAgc2VncyA9IFtmIGZvciBmIGluIGZpbGVzIGlmIGYuZW5kc3dpdGgoZXh0X3MpXQogICAgICAgICAgICBtYW5zID0gW2YgZm9yIGYgaW4gZmlsZXMgaWYgZi5lbmRzd2l0aChleHRfbSldCiAgICAgICAgICAgIHN1YnByb2Nlc3MucnVuKFsiZ2l0IiwiYWRkIl0rbWFucywgY3dkPWdkLCBjaGVjaz1UcnVlLCBzdGRvdXQ9c3VicHJvY2Vzcy5ERVZOVUxMLCBzdGRlcnI9c3VicHJvY2Vzcy5ERVZOVUxMKQogICAgICAgICAgICBzdWJwcm9jZXNzLnJ1bihbImdpdCIsImNvbW1pdCIsIi1tIixmIkFkZCB7Zm5hbWV9Il0sIGN3ZD1nZCwgY2hlY2s9VHJ1ZSwKICAgICAgICAgICAgICAgICAgICAgICAgICAgc3Rkb3V0PXN1YnByb2Nlc3MuREVWTlVMTCwgc3RkZXJyPXN1YnByb2Nlc3MuREVWTlVMTCkKICAgICAgICAgICAgZm9yIGF0dCBpbiByYW5nZSgzKToKICAgICAgICAgICAgICAgIHRyeToKICAgICAgICAgICAgICAgICAgICBzdWJwcm9jZXNzLnJ1bihbImdpdCIsInB1c2giLCItdSIsIm9yaWdpbiIsIm1haW4iXSxjd2Q9Z2QsY2hlY2s9VHJ1ZSwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBzdGRvdXQ9c3VicHJvY2Vzcy5ERVZOVUxMLHN0ZGVycj1zdWJwcm9jZXNzLlBJUEUsdGltZW91dD02MDApOyBicmVhawogICAgICAgICAgICAgICAgZXhjZXB0OgogICAgICAgICAgICAgICAgICAgIGlmIGF0dD09MjoKICAgICAgICAgICAgICAgICAgICAgICAgc3VicHJvY2Vzcy5ydW4oWyJnaXQiLCJwdXNoIiwiLWYiLCJvcmlnaW4iLCJtYWluIl0sY3dkPWdkLGNoZWNrPVRydWUsCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIHN0ZG91dD1zdWJwcm9jZXNzLkRFVk5VTEwsc3RkZXJyPXN1YnByb2Nlc3MuUElQRSx0aW1lb3V0PTYwMCkKICAgICAgICAgICAgYnMgPSBpbnQoYmF0Y2hfc3opCiAgICAgICAgICAgIGZvciBpMyBpbiByYW5nZSgwLCBsZW4oc2VncyksIGJzKToKICAgICAgICAgICAgICAgIGIgPSBzZWdzW2kzOmkzK2JzXQogICAgICAgICAgICAgICAgc3VicHJvY2Vzcy5ydW4oWyJnaXQiLCJhZGQiXStiLGN3ZD1nZCxjaGVjaz1UcnVlLHN0ZG91dD1zdWJwcm9jZXNzLkRFVk5VTEwsc3RkZXJyPXN1YnByb2Nlc3MuREVWTlVMTCkKICAgICAgICAgICAgICAgIHN1YnByb2Nlc3MucnVuKFsiZ2l0IiwiY29tbWl0IiwiLW0iLGYiQmF0Y2gge2kzfSJdLGN3ZD1nZCxjaGVjaz1UcnVlLAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgc3Rkb3V0PXN1YnByb2Nlc3MuREVWTlVMTCxzdGRlcnI9c3VicHJvY2Vzcy5ERVZOVUxMKQogICAgICAgICAgICAgICAgZm9yIGF0dCBpbiByYW5nZSgzKToKICAgICAgICAgICAgICAgICAgICB0cnk6CiAgICAgICAgICAgICAgICAgICAgICAgIHN1YnByb2Nlc3MucnVuKFsiZ2l0IiwicHVzaCIsIm9yaWdpbiIsIm1haW4iXSxjd2Q9Z2QsY2hlY2s9VHJ1ZSwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgc3Rkb3V0PXN1YnByb2Nlc3MuREVWTlVMTCxzdGRlcnI9c3VicHJvY2Vzcy5QSVBFLHRpbWVvdXQ9NjAwKTsgYnJlYWsKICAgICAgICAgICAgICAgICAgICBleGNlcHQ6CiAgICAgICAgICAgICAgICAgICAgICAgIGlmIGF0dD09MjogbG9ncy5hcHBlbmQoZiIgIEVycm9yIGJhdGNoIHtpM30iKQogICAgICAgICAgICAgICAgcHJvZ3Jlc3MoKGlkeCsoaTMvbWF4KGxlbihzZWdzKSwxKSkpL2xlbihzb3VyY2VzKSkKICAgICAgICAgICAgZ3AgPSBmImh0dHBzOi8vZ29vcGxheS54eXovZ3Avc3RyZWFtLnBocD9yZXBvPXtybmFtZX0mYnJhbmNoPW1haW4mZmlsZT17bWFuaWZlc3R9IgogICAgICAgICAgICBnaCA9IGYie2h0bWxfdXJsfS9ibG9iL21haW4ve21hbmlmZXN0fSIKICAgICAgICAgICAgZmluYWxfbGlua3MuYXBwZW5kKGYie2ZuYW1lfVxuR29vcGxheToge2dwfVxuR2l0SHViOiB7Z2h9IikKICAgICAgICAgICAgbG9ncy5hcHBlbmQoZiJDb21wbGV0YWRvOiB7Zm5hbWV9Iik7IHlpZWxkICJcbiIuam9pbihsb2dzKSwgbG9ncywgIiIKICAgICAgICAgICAgaWYgZGVsX2xvY2FsOiBzaHV0aWwucm10cmVlKG91dGRpciwgaWdub3JlX2Vycm9ycz1UcnVlKQogICAgICAgIHlpZWxkICJcbiIuam9pbihsb2dzKSwgbG9ncywgIlxuXG4iLmpvaW4oZmluYWxfbGlua3MpCiAgICBleGNlcHQgRXhjZXB0aW9uIGFzIGU6CiAgICAgICAgaW1wb3J0IHRyYWNlYmFjazsgdHJhY2ViYWNrLnByaW50X2V4YygpCiAgICAgICAgbG9ncy5hcHBlbmQoZiJFUlJPUjoge2V9Iik7IHlpZWxkICJcbiIuam9pbihsb2dzKSwgbG9ncywgIiIKCndpdGggZ3IuQmxvY2tzKHRoZW1lPWdyLnRoZW1lcy5Tb2Z0KCkpIGFzIGRlbW86CiAgICBnci5NYXJrZG93bihmIiMgSExTL0RBU0ggQ29udmVydGVyIEVYVFJFTUUgfCBDUFU6e09QVElNQUxfVEhSRUFEU30gfCBSQU06e1JBTURJU0tfUEFUSH0iKQogICAgd2l0aCBnci5Sb3coKToKICAgICAgICB3aXRoIGdyLkNvbHVtbihzY2FsZT0xKToKICAgICAgICAgICAgdG9rZW4gICAgPSBnci5UZXh0Ym94KGxhYmVsPSJHaXRIdWIgVG9rZW4iLCB0eXBlPSJwYXNzd29yZCIsIHBsYWNlaG9sZGVyPSJnaHBfLi4uIikKICAgICAgICAgICAgaWZpbGUgICAgPSBnci5GaWxlKGxhYmVsPSJBcmNoaXZvcyIsIGZpbGVfY291bnQ9Im11bHRpcGxlIikKICAgICAgICAgICAgaXVybHMgICAgPSBnci5UZXh0Ym94KGxhYmVsPSJVUkxzIiwgbGluZXM9NCkKICAgICAgICAgICAgY29udl9vcHQgPSBnci5Ecm9wZG93bihbIk9wY2lvbiAxOiBDb3B5IFZpZGVvIiwiT3BjaW9uIDI6IENvcHkgVmlkZW8gTVAzIiwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIk9wY2lvbiAzOiAxMDgwcCs3MjBwIEgyNjQiLCJPcGNpb24gNDogNEsrMTA4MHArNzIwcCBIMjY0Il0sCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgdmFsdWU9Ik9wY2lvbiAxOiBDb3B5IFZpZGVvIiwgbGFiZWw9Ik1vZG8iKQogICAgICAgICAgICBzZm10ICAgICA9IGdyLkRyb3Bkb3duKFsiSExTIChNM1U4KSIsIkRBU0ggKE1QRCkiXSwgdmFsdWU9IkhMUyAoTTNVOCkiLCBsYWJlbD0iRm9ybWF0byIpCiAgICAgICAgICAgIHdpdGggZ3IuUm93KCk6CiAgICAgICAgICAgICAgICBidmlkID0gZ3IuTnVtYmVyKHZhbHVlPTMwLCBsYWJlbD0iQmF0Y2giLCBwcmVjaXNpb249MCkKICAgICAgICAgICAgICAgIG13a3IgPSBnci5TbGlkZXIoMSw4LDQsc3RlcD0xLGxhYmVsPSJXb3JrZXJzIikKICAgICAgICAgICAgZGxvYyAgPSBnci5DaGVja2JveCh2YWx1ZT1UcnVlLCBsYWJlbD0iQm9ycmFyIGxvY2FsIikKICAgICAgICAgICAgY3R5cGUgPSBnci5SYWRpbyhbIlBlbGljdWxhIiwiU2VyaWUiXSwgdmFsdWU9IlBlbGljdWxhIiwgbGFiZWw9IlRpcG8iKQogICAgICAgICAgICBtbmFtZSA9IGdyLlRleHRib3gobGFiZWw9IlBlbGljdWxhIiwgcGxhY2Vob2xkZXI9IkVsIFBhZHJpbm8iKQogICAgICAgICAgICB3aXRoIGdyLkdyb3VwKHZpc2libGU9RmFsc2UpIGFzIHNnOgogICAgICAgICAgICAgICAgc25hbWUgPSBnci5UZXh0Ym94KGxhYmVsPSJTZXJpZSIsIHBsYWNlaG9sZGVyPSJCcmVha2luZyBCYWQiKQogICAgICAgICAgICAgICAgd2l0aCBnci5Sb3coKToKICAgICAgICAgICAgICAgICAgICBzZWFzID0gZ3IuTnVtYmVyKGxhYmVsPSJUZW1wb3JhZGEiLCB2YWx1ZT0xLCBwcmVjaXNpb249MCwgbWluaW11bT0xKQogICAgICAgICAgICAgICAgICAgIGVwcyAgPSBnci5OdW1iZXIobGFiZWw9IkVwLiBpbmljaWFsIiwgdmFsdWU9MSwgcHJlY2lzaW9uPTAsIG1pbmltdW09MSkKICAgICAgICAgICAgY3R5cGUuY2hhbmdlKGZuPWxhbWJkYSBjOihnci51cGRhdGUodmlzaWJsZT1jPT0iUGVsaWN1bGEiKSxnci51cGRhdGUodmlzaWJsZT1jPT0iU2VyaWUiKSksCiAgICAgICAgICAgICAgICAgICAgICAgICBpbnB1dHM9Y3R5cGUsIG91dHB1dHM9W21uYW1lLHNnXSkKICAgICAgICAgICAgYnRuID0gZ3IuQnV0dG9uKCJQUk9DRVNBUiIsIHZhcmlhbnQ9InByaW1hcnkiLCBzaXplPSJsZyIpCiAgICAgICAgd2l0aCBnci5Db2x1bW4oc2NhbGU9Mik6CiAgICAgICAgICAgIGxvZ3Nfb3V0ICA9IGdyLlRleHRib3gobGFiZWw9IkxvZ3MiLCBsaW5lcz0yOCwgaW50ZXJhY3RpdmU9RmFsc2UpCiAgICAgICAgICAgIGxpbmtzX291dCA9IGdyLlRleHRib3gobGFiZWw9IkxpbmtzIiwgbGluZXM9MTAsIGludGVyYWN0aXZlPUZhbHNlKQogICAgYnRuLmNsaWNrKGZuPXByb2Nlc3NfYnVsaywKICAgICAgICAgICAgICBpbnB1dHM9W3Rva2VuLGlmaWxlLGl1cmxzLGNvbnZfb3B0LHNmbXQsYnZpZCxkbG9jLG13a3IsY3R5cGUsbW5hbWUsc25hbWUsc2VhcyxlcHNdLAogICAgICAgICAgICAgIG91dHB1dHM9W2xvZ3Nfb3V0LGdyLlN0YXRlKCksbGlua3Nfb3V0XSkKCmlmIF9fbmFtZV9fID09ICJfX21haW5fXyI6CiAgICBkZW1vLmxhdW5jaCgpCg=="
+          $bytes = [System.Convert]::FromBase64String($b64)
+          [System.IO.File]::WriteAllBytes("C:\scripts\hls_dash_converter.py", $bytes)
+          Write-Host "Script 2 escrito: $(Get-Item 'C:\scripts\hls_dash_converter.py').Length bytes"
 
-def setup_ramdisk():
-    try:
-        ramdisk_path = Path("/dev/shm/video_processing")
-        ramdisk_path.mkdir(exist_ok=True, parents=True)
-        return ramdisk_path
-    except:
-        tmp_path = Path(tempfile.gettempdir()) / "video_processing"
-        tmp_path.mkdir(exist_ok=True)
-        return tmp_path
-
-def get_optimal_threads():
-    try:
-        return max(len(os.sched_getaffinity(0)) - 1, 1)
-    except:
-        return max((os.cpu_count() or 4) - 1, 1)
-
-RAMDISK_PATH   = setup_ramdisk()
-OPTIMAL_THREADS = get_optimal_threads()
-print(f"CPU Threads: {OPTIMAL_THREADS} | RAM Disk: {RAMDISK_PATH}")
-
-for git_cmd in [
-    ["git","config","--global","user.email","actions@github.com"],
-    ["git","config","--global","user.name","Hugging Face Space"],
-    ["git","config","--global","core.compression","0"],
-    ["git","config","--global","pack.threads",str(OPTIMAL_THREADS)],
-]:
-    subprocess.run(git_cmd, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-def is_live_stream(src):
-    if not src.startswith(("http://","https://")): return False
-    if any(src.lower().endswith(e) for e in [".mp4",".mkv",".avi",".mov",".wmv",".flv",".webm",".ts"]): return False
-    return any(p in src.lower() for p in ["/live/","/stream/",".m3u8",".mpd","/hls/","/dash/"])
-
-def get_input_args(src):
-    ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-    if not src.startswith(("http://","https://")):
-        return ["-analyzeduration","100000000","-probesize","100000000","-fflags","+genpts+igndts"]
-    if is_live_stream(src):
-        return ["-user_agent",ua,"-timeout","10000000","-reconnect","1",
-                "-reconnect_streamed","1","-reconnect_delay_max","5",
-                "-fflags","+fastseek+genpts","-probesize","50M","-analyzeduration","20M"]
-    return ["-user_agent",ua,"-timeout","30000000","-reconnect","1",
-            "-reconnect_streamed","1","-reconnect_delay_max","5",
-            "-analyzeduration","200000000","-probesize","200000000",
-            "-fflags","+genpts+igndts","-err_detect","ignore_err",
-            "-max_delay","5000000","-rw_timeout","30000000"]
-
-def get_copy_optimization_args():
-    return ["-max_muxing_queue_size","9999","-avoid_negative_ts","make_zero",
-            "-fflags","+genpts+igndts+flush_packets","-copytb","1","-start_at_zero",
-            "-threads",str(OPTIMAL_THREADS),"-thread_queue_size","4096"]
-
-def get_render_optimization_args():
-    return ["-threads",str(OPTIMAL_THREADS),"-thread_type","slice+frame",
-            "-slices",str(OPTIMAL_THREADS),"-max_muxing_queue_size","9999",
-            "-thread_queue_size","4096"]
-
-def clean_for_folder(n): return re.sub(r'[<>:"/\\|?*]','_',n).strip()[:200]
-def clean_for_repo(n):
-    n = re.sub(r'[^a-zA-Z0-9_-]','-',n)
-    return re.sub(r'-+','-',n).strip('-')[:100]
-
-def build_name(content_type, movie_name, serie_name, season, ep_start, ep_index):
-    if content_type == "Pelicula":
-        base = movie_name.strip() or "Pelicula"
-        return clean_for_folder(base), clean_for_repo(base)
-    name = serie_name.strip() or "Serie"
-    try: temp = int(season)
-    except: temp = 1
-    try: ep_num = int(ep_start) + ep_index
-    except: ep_num = ep_index + 1
-    label = f"{name}_T{temp}_Ep{ep_num}"
-    return clean_for_folder(label), clean_for_repo(label)
-
-def detect_video_duration(src, input_args):
-    cmd = ["ffprobe","-v","error"] + input_args + [
-        "-show_entries","format=duration","-of","json","-i",src]
-    try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-        d = json.loads(r.stdout).get("format",{}).get("duration")
-        return float(d) if d and d != "N/A" else None
-    except: return None
-
-def detect_audio_streams(src, input_args):
-    cmd = ["ffprobe","-v","error"] + input_args + [
-        "-select_streams","a",
-        "-show_entries","stream=index,codec_name:stream_tags=language,title",
-        "-of","json","-i",src]
-    try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-        streams = json.loads(r.stdout).get("streams",[])
-        return [{"index":s.get("index",0),
-                 "language":s.get("tags",{}).get("language","und"),
-                 "title":s.get("tags",{}).get("title",f"Audio {s.get('index',0)}"),
-                 "codec":s.get("codec_name","unknown")} for s in streams]
-    except: return []
-
-def prioritize_audio_tracks(tracks):
-    pri = ["spa","es","spanish","espanol","latino","lat","es-mx","es-419"]
-    def key(t):
-        l = t["language"].lower(); ti = t["title"].lower()
-        for p in pri:
-            if p in l or p in ti: return 0
-        return 1 if l == "und" else 2
-    return sorted(tracks, key=key)
-
-def create_master_m3u8(output_dir, video_streams, audio_playlists):
-    content = "#EXTM3U\n#EXT-X-VERSION:7\n\n"
-    for ap in audio_playlists:
-        d = "YES" if ap["is_default"] else "NO"
-        content += f'#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="{ap["title"]}",LANGUAGE="{ap["language"]}",DEFAULT={d},AUTOSELECT={d},URI="{ap["file"]}"\n'
-    content += "\n"
-    for v in video_streams:
-        content += f'#EXT-X-STREAM-INF:BANDWIDTH={v["bandwidth"]},RESOLUTION={v["resolution"]},CODECS="{v["codecs"]}",AUDIO="audio"\n{v["file"]}\n'
-    (output_dir / "master.m3u8").write_text(content)
-
-def clone_m3u8_with_same_segments(src_m3u8, dest_m3u8):
-    dest_m3u8.write_text(src_m3u8.read_text())
-
-def process_audio_track_parallel(args):
-    track, i, total, source_val, output_dir, _, ffmpeg_input_args = args
-    temp_dir = RAMDISK_PATH / f"audio_temp_{os.getpid()}_{i}"
-    try:
-        temp_dir.mkdir(exist_ok=True)
-        audio_file = temp_dir / f"audio_{i}.m3u8"
-        seg_audio  = temp_dir / f"audio_{i}_%03d.ts"
-        cmd = (["ffmpeg","-hide_banner","-threads",str(OPTIMAL_THREADS)]
-               + ffmpeg_input_args
-               + ["-i",source_val,"-map",f"0:{track['index']}",
-                  "-c:a","libmp3lame","-b:a","192k","-ar","48000","-ac","2",
-                  "-threads",str(OPTIMAL_THREADS),"-max_muxing_queue_size","9999",
-                  "-thread_queue_size","4096",
-                  "-hls_time","5","-hls_list_size","0",
-                  "-hls_segment_filename",str(seg_audio),
-                  "-hls_flags","independent_segments+append_list+temp_file",
-                  "-hls_playlist_type","vod","-hls_segment_type","mpegts",
-                  str(audio_file),"-y","-loglevel","warning"])
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=7200)
-        if result.returncode != 0 or not audio_file.exists():
-            return {"success":False,"index":i,"error":result.stderr[-300:],"track":track}
-        ts_files = list(temp_dir.glob(f"audio_{i}_*.ts"))
-        if not ts_files:
-            return {"success":False,"index":i,"error":"No TS generados","track":track}
-        shutil.move(str(audio_file), str(output_dir / f"audio_{i}.m3u8"))
-        for ts in ts_files: shutil.move(str(ts), str(output_dir / ts.name))
-        return {"success":True,"index":i,"track":track,"segments_count":len(ts_files),
-                "playlist":{"file":f"audio_{i}.m3u8","language":track["language"],
-                             "title":track["title"],"is_default":i==0}}
-    except Exception as e:
-        return {"success":False,"index":i,"error":str(e),"track":track}
-    finally:
-        shutil.rmtree(temp_dir, ignore_errors=True)
-
-def process_bulk(token, input_file, input_urls, conversion_option, stream_format,
-                 batch_size_vid, delete_local, max_workers,
-                 content_type, movie_name, serie_name, season, ep_start,
-                 progress=gr.Progress()):
-    logs = [f"Iniciando EXTREME (CPU:{OPTIMAL_THREADS} threads, RAM:{RAMDISK_PATH})"]
-    try:
-        if not token: raise Exception("Se requiere Token de GitHub.")
-        sources = []
-        files_list = input_file if isinstance(input_file, list) else ([input_file] if input_file else [])
-        for f in files_list: sources.append({"type":"file","value":f.name})
-        if input_urls:
-            for line in input_urls.split("\n"):
-                url = line.strip()
-                if url: sources.append({"type":"url","value":url})
-        if not sources: raise Exception("Agrega archivos o URLs.")
-
-        total_sources = len(sources)
-        final_links   = []
-
-        for idx, source in enumerate(sources):
-            is_file    = source["type"] == "file"
-            source_val = source["value"]
-            folder_name, repo_name = build_name(content_type, movie_name, serie_name, season, ep_start, idx)
-            logs.append(f"[{idx+1}/{total_sources}] {folder_name}")
-            yield "\n".join(logs), logs, ""
-
-            ffmpeg_input_args = get_input_args(source_val)
-            duration = detect_video_duration(source_val, ffmpeg_input_args)
-            if duration:
-                h,m,s = int(duration//3600), int((duration%3600)//60), int(duration%60)
-                logs.append(f"  Duracion: {h:02d}:{m:02d}:{s:02d}")
-            else:
-                logs.append("  No se pudo detectar duracion")
-            yield "\n".join(logs), logs, ""
-
-            base_dir   = Path(source_val).parent if is_file else Path.cwd()
-            output_dir = base_dir / folder_name
-            output_dir.mkdir(exist_ok=True)
-
-            audio_tracks = detect_audio_streams(source_val, ffmpeg_input_args) or \
-                           [{"index":0,"language":"und","title":"Audio","codec":"unknown"}]
-            audio_tracks = prioritize_audio_tracks(audio_tracks)
-            logs.append(f"  {len(audio_tracks)} streams de audio detectados")
-            yield "\n".join(logs), logs, ""
-
-            manifest_file = ""
-
-            if stream_format == "HLS (M3U8)":
-                audio_args = [(t,i,len(audio_tracks),source_val,output_dir,False,ffmpeg_input_args)
-                              for i,t in enumerate(audio_tracks)]
-                audio_playlists = []
-                with ThreadPoolExecutor(max_workers=max_workers) as exe:
-                    for future in as_completed({exe.submit(process_audio_track_parallel,a):a for a in audio_args}):
-                        res = future.result()
-                        if res["success"]:
-                            audio_playlists.append(res["playlist"])
-                            logs.append(f"  Audio {res['index']+1} OK ({res.get('segments_count',0)} segs)")
-                        else:
-                            logs.append(f"  Error Audio {res['index']+1}: {res.get('error','?')[:80]}")
-                        yield "\n".join(logs), logs, ""
-                audio_playlists.sort(key=lambda x: int(x["file"].split("_")[1].split(".")[0]))
-                if not audio_playlists: raise Exception("Ningun audio procesado")
-
-                video_streams = []
-                if conversion_option in ["Opcion 1: Copy Video","Opcion 2: Copy Video + MP3"]:
-                    temp_vd = RAMDISK_PATH / f"video_temp_{idx}"
-                    temp_vd.mkdir(exist_ok=True)
-                    v_file  = temp_vd / "video_1080p.m3u8"
-                    v_seg   = temp_vd / "video_1080p_%03d.ts"
-                    cmd = (["ffmpeg","-hide_banner","-threads",str(OPTIMAL_THREADS)]
-                           + ffmpeg_input_args
-                           + ["-i",source_val,"-map","0:v:0","-c:v","copy","-an"]
-                           + get_copy_optimization_args()
-                           + ["-hls_time","5","-hls_list_size","0",
-                              "-hls_segment_filename",str(v_seg),
-                              "-hls_flags","independent_segments+append_list+temp_file",
-                              "-hls_playlist_type","vod","-hls_segment_type","mpegts",
-                              str(v_file),"-y","-loglevel","error"])
-                    r = subprocess.run(cmd, capture_output=True, text=True, timeout=7200)
-                    if r.returncode != 0:
-                        shutil.rmtree(temp_vd, ignore_errors=True)
-                        raise Exception(f"Video copy error: {r.stderr[-300:]}")
-                    final_1080 = output_dir / "video_1080p.m3u8"
-                    shutil.move(str(v_file), str(final_1080))
-                    for ts in temp_vd.glob("video_1080p_*.ts"):
-                        shutil.move(str(ts), str(output_dir/ts.name))
-                    shutil.rmtree(temp_vd, ignore_errors=True)
-                    clone_m3u8_with_same_segments(final_1080, output_dir/"video_720p.m3u8")
-                    video_streams = [
-                        {"file":"video_1080p.m3u8","resolution":"1920x1080","bandwidth":5000000,"codecs":"avc1.640028"},
-                        {"file":"video_720p.m3u8", "resolution":"1280x720", "bandwidth":3000000,"codecs":"avc1.640028"},
-                    ]
-                else:
-                    if "4K" in conversion_option:
-                        res_list = [
-                            {"label":"4K",   "scale":"scale=-2:2160","bitrate":"15000k","bufsize":"30000k","res":"3840x2160"},
-                            {"label":"1080p","scale":"scale=-2:1080","bitrate":"5000k", "bufsize":"10000k","res":"1920x1080"},
-                            {"label":"720p", "scale":"scale=-2:720", "bitrate":"2800k", "bufsize":"5600k", "res":"1280x720"},
-                        ]
-                    else:
-                        res_list = [
-                            {"label":"1080p","scale":"scale=-2:1080","bitrate":"5000k", "bufsize":"10000k","res":"1920x1080"},
-                            {"label":"720p", "scale":"scale=-2:720", "bitrate":"2800k", "bufsize":"5600k", "res":"1280x720"},
-                        ]
-                    for rc in res_list:
-                        tmp = RAMDISK_PATH / f"render_{rc['label']}"
-                        tmp.mkdir(exist_ok=True)
-                        vf  = tmp / f"video_{rc['label']}.m3u8"
-                        vs  = tmp / f"video_{rc['label']}_%03d.ts"
-                        cmd = (["ffmpeg","-hide_banner","-threads",str(OPTIMAL_THREADS)]
-                               + ffmpeg_input_args
-                               + ["-i",source_val,"-map","0:v:0","-an",
-                                  "-c:v","libx264","-preset","ultrafast","-crf","23",
-                                  "-vf",rc["scale"],"-b:v",rc["bitrate"],
-                                  "-maxrate",rc["bitrate"],"-bufsize",rc["bufsize"],"-pix_fmt","yuv420p"]
-                               + get_render_optimization_args()
-                               + ["-hls_time","5","-hls_list_size","0",
-                                  "-hls_segment_filename",str(vs),
-                                  "-hls_flags","independent_segments+append_list+temp_file",
-                                  "-hls_playlist_type","vod","-hls_segment_type","mpegts",
-                                  str(vf),"-y","-loglevel","error"])
-                        r = subprocess.run(cmd, capture_output=True, text=True, timeout=14400)
-                        if r.returncode != 0:
-                            shutil.rmtree(tmp, ignore_errors=True); continue
-                        final_m = output_dir / f"video_{rc['label']}.m3u8"
-                        shutil.move(str(vf), str(final_m))
-                        for ts in tmp.glob(f"video_{rc['label']}_*.ts"):
-                            shutil.move(str(ts), str(output_dir/ts.name))
-                        shutil.rmtree(tmp, ignore_errors=True)
-                        video_streams.append({"file":f"video_{rc['label']}.m3u8","resolution":rc["res"],
-                                              "bandwidth":int(rc["bitrate"].replace("k","000"))+192000,
-                                              "codecs":"avc1.640028"})
-                if not video_streams: raise Exception("Sin video generado")
-                create_master_m3u8(output_dir, video_streams, audio_playlists)
-                manifest_file = "master.m3u8"
-
-            elif stream_format == "DASH (MPD)":
-                tmp_dash = RAMDISK_PATH / f"dash_{idx}"
-                tmp_dash.mkdir(exist_ok=True)
-                v_codec = "copy" if "Copy" in conversion_option else "libx264"
-                cmd = (["ffmpeg","-hide_banner","-threads",str(OPTIMAL_THREADS)]
-                       + ffmpeg_input_args + ["-i",source_val,"-map","0:v:0","-c:v:0",v_codec])
-                if v_codec != "copy":
-                    cmd += ["-preset","ultrafast","-crf","23"]
-                for i,t in enumerate(audio_tracks):
-                    cmd += ["-map",f"0:{t['index']}",
-                            f"-c:a:{i}","aac",f"-b:a:{i}","192k",
-                            f"-ar:a:{i}","48000",f"-ac:a:{i}","2"]
-                mpd_out = tmp_dash / "manifest.mpd"
-                cmd += (get_copy_optimization_args() if v_codec=="copy" else get_render_optimization_args())
-                cmd += ["-f","dash","-seg_duration","5","-use_template","1","-use_timeline","0",
-                        "-init_seg_name","init-$RepresentationID$.m4s",
-                        "-media_seg_name","chunk-$RepresentationID$-$Number%05d$.m4s",
-                        str(mpd_out),"-y","-loglevel","error"]
-                r = subprocess.run(cmd, capture_output=True, text=True, timeout=14400)
-                if r.returncode != 0:
-                    shutil.rmtree(tmp_dash, ignore_errors=True)
-                    raise Exception(f"DASH error: {r.stderr[-300:]}")
-                shutil.move(str(mpd_out), str(output_dir/"manifest.mpd"))
-                for m4s in tmp_dash.glob("*.m4s"):
-                    shutil.move(str(m4s), str(output_dir/m4s.name))
-                shutil.rmtree(tmp_dash, ignore_errors=True)
-                manifest_file = "manifest.mpd"
-
-            headers  = {"Authorization":f"token {token}"}
-            r_repo   = requests.post("https://api.github.com/user/repos", headers=headers,
-                                     json={"name":repo_name,"private":True}, timeout=30)
-            if r_repo.status_code == 422:
-                username = requests.get("https://api.github.com/user",headers=headers).json()["login"]
-                html_url = f"https://github.com/{username}/{repo_name}"
-            else:
-                html_url = r_repo.json()["html_url"]
-
-            repo_git_url = html_url.replace("https://",f"https://{token}@") + ".git"
-            git_dir = str(output_dir)
-            for gc in [["git","init"],["git","checkout","-b","main"],
-                       ["git","remote","add","origin",repo_git_url],
-                       ["git","config","http.postBuffer","524288000"],
-                       ["git","config","core.compression","0"]]:
-                subprocess.run(gc, cwd=git_dir, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-            files = os.listdir(git_dir)
-            ext_seg = ".m4s" if stream_format == "DASH (MPD)" else ".ts"
-            ext_man = ".mpd" if stream_format == "DASH (MPD)" else ".m3u8"
-            seg_files      = [f for f in files if f.endswith(ext_seg)]
-            manifest_files = [f for f in files if f.endswith(ext_man)]
-
-            subprocess.run(["git","add"]+manifest_files, cwd=git_dir, check=True,
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            subprocess.run(["git","commit","-m",f"Add {folder_name}"], cwd=git_dir, check=True,
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-            for attempt in range(3):
-                try:
-                    subprocess.run(["git","push","-u","origin","main"], cwd=git_dir, check=True,
-                                   stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=600)
-                    break
-                except:
-                    if attempt == 2:
-                        subprocess.run(["git","push","-f","origin","main"], cwd=git_dir, check=True,
-                                       stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=600)
-
-            batch_size = int(batch_size_vid)
-            for i in range(0, len(seg_files), batch_size):
-                batch = seg_files[i:i+batch_size]
-                subprocess.run(["git","add"]+batch, cwd=git_dir, check=True,
-                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                subprocess.run(["git","commit","-m",f"Batch {i}"], cwd=git_dir, check=True,
-                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                for attempt in range(3):
-                    try:
-                        subprocess.run(["git","push","origin","main"], cwd=git_dir, check=True,
-                                       stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=600)
-                        break
-                    except:
-                        if attempt == 2:
-                            logs.append(f"  Error en batch {i}")
-                progress((idx+(i/max(len(seg_files),1)))/total_sources)
-
-            gooplay = f"https://gooplay.xyz/gp/stream.php?repo={repo_name}&branch=main&file={manifest_file}"
-            github  = f"{html_url}/blob/main/{manifest_file}"
-            final_links.append(f"{folder_name}\nGooplay: {gooplay}\nGitHub:  {github}")
-            logs.append(f"Completado: {folder_name}")
-            yield "\n".join(logs), logs, ""
-
-            if delete_local: shutil.rmtree(output_dir, ignore_errors=True)
-
-        yield "\n".join(logs), logs, "\n\n".join(final_links)
-
-    except Exception as e:
-        import traceback; traceback.print_exc()
-        logs.append(f"ERROR: {e}")
-        yield "\n".join(logs), logs, ""
-
-with gr.Blocks(theme=gr.themes.Soft()) as demo:
-    gr.Markdown(f"# HLS/DASH Converter EXTREME  |  CPU:{OPTIMAL_THREADS}t | RAM:{RAMDISK_PATH}")
-    with gr.Row():
-        with gr.Column(scale=1):
-            token          = gr.Textbox(label="GitHub Token", type="password", placeholder="ghp_...")
-            input_file     = gr.File(label="Archivos", file_count="multiple")
-            input_urls     = gr.Textbox(label="URLs (una por linea)", lines=4)
-            conv_option    = gr.Dropdown(
-                ["Opcion 1: Copy Video","Opcion 2: Copy Video + MP3",
-                 "Opcion 3: Multi-Res 1080p+720p H264","Opcion 4: Multi-Res 4K+1080p+720p H264"],
-                value="Opcion 1: Copy Video", label="Modo de conversion")
-            stream_fmt     = gr.Dropdown(["HLS (M3U8)","DASH (MPD)"], value="HLS (M3U8)", label="Formato")
-            with gr.Row():
-                batch_vid    = gr.Number(value=30, label="Batch Git", precision=0)
-                max_wkrs     = gr.Slider(1, 8, 4, step=1, label="Workers Audio")
-            del_local      = gr.Checkbox(value=True, label="Borrar archivos locales")
-            content_type   = gr.Radio(["Pelicula","Serie"], value="Pelicula", label="Tipo")
-            movie_name     = gr.Textbox(label="Nombre pelicula", placeholder="El Padrino")
-            with gr.Group(visible=False) as sg:
-                serie_name = gr.Textbox(label="Nombre serie", placeholder="Breaking Bad")
-                with gr.Row():
-                    season   = gr.Number(label="Temporada", value=1, precision=0, minimum=1)
-                    ep_start = gr.Number(label="Episodio inicial", value=1, precision=0, minimum=1)
-            content_type.change(fn=lambda c: (gr.update(visible=c=="Pelicula"), gr.update(visible=c=="Serie")),
-                                inputs=content_type, outputs=[movie_name, sg])
-            btn = gr.Button("PROCESAR", variant="primary", size="lg")
-        with gr.Column(scale=2):
-            log_out   = gr.Textbox(label="Logs", lines=28, interactive=False)
-            links_out = gr.Textbox(label="Links generados", lines=10, interactive=False)
-    btn.click(fn=process_bulk,
-              inputs=[token,input_file,input_urls,conv_option,stream_fmt,
-                      batch_vid,del_local,max_wkrs,content_type,movie_name,serie_name,season,ep_start],
-              outputs=[log_out,gr.State(),links_out])
-
-if __name__ == "__main__":
-    demo.launch()
-'@
-          New-Item -ItemType Directory -Force -Path "C:\scripts" | Out-Null
-          Set-Content -Path "C:\scripts\hls_dash_converter.py" -Value $code -Encoding UTF8
-          Write-Host "✅ Script 2 escrito en C:\scripts\hls_dash_converter.py"
-        shell: powershell
-
-      # =========================================================
+      # =======================================================
       # 9. CONFIGURAR RDP
-      # =========================================================
+      # =======================================================
       - name: Configure RDP
+        shell: pwsh
         run: |
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' `
-                           -Name "fDenyTSConnections" -Value 0 -Force
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
-                           -Name "UserAuthentication" -Value 0 -Force
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
-                           -Name "SecurityLayer" -Value 0 -Force
+          Set-ItemProperty 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name fDenyTSConnections -Value 0 -Force
+          Set-ItemProperty 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name UserAuthentication -Value 0 -Force
+          Set-ItemProperty 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name SecurityLayer -Value 0 -Force
           netsh advfirewall firewall delete rule name="RDP-Tailscale" 2>$null
-          netsh advfirewall firewall add rule name="RDP-Tailscale" `
-            dir=in action=allow protocol=TCP localport=3389
-          Restart-Service -Name TermService -Force
+          netsh advfirewall firewall add rule name="RDP-Tailscale" dir=in action=allow protocol=TCP localport=3389
+          Restart-Service TermService -Force
+          Write-Host "RDP configurado"
 
-      # =========================================================
+      # =======================================================
       # 10. CREAR USUARIO RDP
-      # =========================================================
+      # =======================================================
       - name: Create RDP User
+        shell: pwsh
         run: |
-          $password   = "${{ github.event.inputs.rdp_password }}"
-          $securePass = ConvertTo-SecureString $password -AsPlainText -Force
-          New-LocalUser -Name "RDP" -Password $securePass -AccountNeverExpires
+          $pw  = "${{ github.event.inputs.rdp_password }}"
+          $sec = ConvertTo-SecureString $pw -AsPlainText -Force
+          New-LocalUser -Name "RDP" -Password $sec -AccountNeverExpires
           Add-LocalGroupMember -Group "Administrators"       -Member "RDP"
           Add-LocalGroupMember -Group "Remote Desktop Users" -Member "RDP"
           if (-not (Get-LocalUser -Name "RDP")) { Write-Error "User creation failed"; exit 1 }
+          Write-Host "Usuario RDP creado"
 
-      # =========================================================
+      # =======================================================
       # 11. INSTALAR TAILSCALE
-      # =========================================================
+      # =======================================================
       - name: Install Tailscale
+        shell: pwsh
         run: |
-          $tsUrl = "https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi"
-          $tsInstaller = "$env:TEMP\tailscale.msi"
-          Invoke-WebRequest -Uri $tsUrl -OutFile $tsInstaller
-          Start-Process msiexec.exe -ArgumentList "/i","`"$tsInstaller`"","/quiet","/norestart" -Wait
-          Remove-Item $tsInstaller -Force
+          $url  = "https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi"
+          $inst = "$env:TEMP\tailscale.msi"
+          Invoke-WebRequest -Uri $url -OutFile $inst
+          Start-Process msiexec.exe -ArgumentList "/i","$inst","/quiet","/norestart" -Wait
+          Remove-Item $inst -Force
+          Write-Host "Tailscale instalado"
 
-      # =========================================================
+      # =======================================================
       # 12. CONECTAR TAILSCALE
-      # =========================================================
+      # =======================================================
       - name: Connect Tailscale
+        shell: pwsh
         run: |
-          & "$env:ProgramFiles\Tailscale\tailscale.exe" up `
-              --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} `
-              --hostname=gh-runner-$env:GITHUB_RUN_ID
-          $tsIP = $null; $retries = 0
-          while (-not $tsIP -and $retries -lt 10) {
-            $tsIP = & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4
-            Start-Sleep -Seconds 5; $retries++
+          & "$env:ProgramFiles\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=gh-runner-$env:GITHUB_RUN_ID
+          $ip = $null; $n = 0
+          while (-not $ip -and $n -lt 10) {
+            $ip = & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4
+            Start-Sleep 5; $n++
           }
-          if (-not $tsIP) { Write-Error "Tailscale IP no asignada"; exit 1 }
-          echo "TAILSCALE_IP=$tsIP" >> $env:GITHUB_ENV
+          if (-not $ip) { Write-Error "Tailscale IP no asignada"; exit 1 }
+          echo "TAILSCALE_IP=$ip" >> $env:GITHUB_ENV
+          Write-Host "Tailscale IP: $ip"
 
-      # =========================================================
+      # =======================================================
       # 13. VERIFICAR RDP
-      # =========================================================
+      # =======================================================
       - name: Verify RDP
+        shell: pwsh
         run: |
-          $test = Test-NetConnection -ComputerName $env:TAILSCALE_IP -Port 3389
-          if (-not $test.TcpTestSucceeded) { Write-Error "RDP no accesible"; exit 1 }
-          Write-Host "✅ RDP accesible en $env:TAILSCALE_IP:3389"
+          $t = Test-NetConnection -ComputerName $env:TAILSCALE_IP -Port 3389
+          if (-not $t.TcpTestSucceeded) { Write-Error "RDP no accesible"; exit 1 }
+          Write-Host "RDP accesible en $($env:TAILSCALE_IP):3389"
 
-      # =========================================================
-      # 14. MANTENER SESION ACTIVA
-      # =========================================================
+      # =======================================================
+      # 14. MANTENER SESION
+      # =======================================================
       - name: Maintain Connection
+        shell: pwsh
         run: |
-          Write-Host "`n========================================="
+          Write-Host ""
+          Write-Host "========================================"
           Write-Host "  RDP LISTO"
-          Write-Host "  IP:       $env:TAILSCALE_IP"
-          Write-Host "  Usuario:  RDP"
-          Write-Host "  Scripts:  C:\scripts\"
-          Write-Host "    - video_converter.py  (gradio>=4, huggingface_hub)"
-          Write-Host "    - hls_dash_converter.py (gradio>=5, requests, psutil)"
-          Write-Host "  FFmpeg:   C:\ffmpeg\"
-          Write-Host "  Brave:    instalado"
-          Write-Host "=========================================`n"
+          Write-Host "  IP:      $env:TAILSCALE_IP"
+          Write-Host "  Usuario: RDP"
+          Write-Host "  Scripts:"
+          Write-Host "    C:\scripts\video_converter.py"
+          Write-Host "    C:\scripts\hls_dash_converter.py"
+          Write-Host "  FFmpeg:  C:\ffmpeg"
+          Write-Host "  Brave:   instalado"
+          Write-Host "========================================"
+          Write-Host ""
           while ($true) {
             $disk = [math]::Round((Get-PSDrive C).Free/1GB, 2)
             $ram  = [math]::Round((Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory/1MB, 2)
-            Write-Host "[$(Get-Date -Format 'HH:mm:ss')] Activo | Disco libre: $disk GB | RAM libre: $ram GB"
-            Start-Sleep -Seconds 300
+            Write-Host "[$(Get-Date -Format 'HH:mm:ss')] Activo | Disco: $disk GB | RAM: $ram GB"
+            Start-Sleep 300
           }
