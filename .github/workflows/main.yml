@@ -1,5 +1,4 @@
 name: RDP
-
 on:
   workflow_dispatch:
     inputs:
@@ -14,80 +13,994 @@ jobs:
     timeout-minutes: 3600
 
     steps:
-      - name: Configure Core RDP Settings
+
+      # =========================================================
+      # 1. LIBERAR ESPACIO EN DISCO (limpieza agresiva)
+      # =========================================================
+      - name: Free Up Disk Space
         run: |
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' `
-                             -Name "fDenyTSConnections" -Value 0 -Force
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
-                             -Name "UserAuthentication" -Value 0 -Force
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
-                             -Name "SecurityLayer" -Value 0 -Force
+          Write-Host "=== Espacio ANTES ==="
+          Get-PSDrive C | ForEach-Object { Write-Host "Libre: $([math]::Round($_.Free/1GB,2)) GB" }
 
-          netsh advfirewall firewall delete rule name="RDP-Tailscale"
-          netsh advfirewall firewall add rule name="RDP-Tailscale" `
-            dir=in action=allow protocol=TCP localport=3389
-
-          Restart-Service -Name TermService -Force
-
-      - name: Create RDP User with Chosen Password
-        run: |
-          $password = "${{ github.event.inputs.rdp_password }}"
-          $securePass = ConvertTo-SecureString $password -AsPlainText -Force
-          New-LocalUser -Name "RDP" -Password $securePass -AccountNeverExpires
-          Add-LocalGroupMember -Group "Administrators" -Member "RDP"
-          Add-LocalGroupMember -Group "Remote Desktop Users" -Member "RDP"
-
-          if (-not (Get-LocalUser -Name "RDP")) {
-              Write-Error "User creation failed"
-              exit 1
+          $pathsToDelete = @(
+            "C:\hostedtoolcache\windows\go",
+            "C:\hostedtoolcache\windows\node",
+            "C:\hostedtoolcache\windows\PyPy",
+            "C:\hostedtoolcache\windows\Ruby",
+            "C:\hostedtoolcache\windows\boost",
+            "C:\Program Files\dotnet\sdk",
+            "C:\Program Files\dotnet\shared",
+            "C:\Program Files (x86)\Microsoft Visual Studio",
+            "C:\Program Files\Microsoft Visual Studio",
+            "C:\Program Files (x86)\Android",
+            "C:\Program Files\Android",
+            "C:\Program Files\MongoDB",
+            "C:\Program Files\MySQL",
+            "C:\Program Files\PostgreSQL",
+            "C:\Program Files\R",
+            "C:\Program Files\Amazon",
+            "C:\Program Files\Google\Chrome",
+            "C:\Program Files\Mozilla Firefox",
+            "C:\Program Files (x86)\Microsoft SDKs",
+            "C:\Program Files\Microsoft SDKs",
+            "C:\Program Files (x86)\Windows Kits",
+            "C:\Program Files\LLVM",
+            "C:\Program Files\Mercurial",
+            "C:\Program Files\NSIS",
+            "C:\Program Files\7-Zip",
+            "C:\Program Files\Git\mingw64\share\doc",
+            "C:\Program Files\Git\mingw64\share\man",
+            "C:\ProgramData\chocolatey\lib",
+            "C:\ProgramData\chocolatey\bin",
+            "C:\tools\php",
+            "C:\tools\Ruby31-x64",
+            "C:\tools\kotlinc",
+            "C:\tools\sbt",
+            "C:\Strawberry"
+          )
+          foreach ($path in $pathsToDelete) {
+            if (Test-Path $path) {
+              Write-Host "Eliminando: $path"
+              Remove-Item $path -Recurse -Force -ErrorAction SilentlyContinue
+            }
           }
 
+          Stop-Service -Name wuauserv -Force -ErrorAction SilentlyContinue
+          Remove-Item "C:\Windows\SoftwareDistribution\Download\*" -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item "$env:TEMP\*"           -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item "C:\Windows\Temp\*"     -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item "C:\Windows\Logs\*"     -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item "C:\Windows\Prefetch\*" -Recurse -Force -ErrorAction SilentlyContinue
+
+          Write-Host "=== Espacio DESPUES ==="
+          Get-PSDrive C | ForEach-Object { Write-Host "Libre: $([math]::Round($_.Free/1GB,2)) GB" }
+
+      # =========================================================
+      # 2. INSTALAR BRAVE BROWSER
+      # =========================================================
+      - name: Install Brave Browser
+        run: |
+          Write-Host "Instalando Brave Browser..."
+          $braveUrl = "https://referrals.brave.com/latest/BraveBrowserSetup-BRV010.exe"
+          $braveInstaller = "$env:TEMP\brave_installer.exe"
+          Invoke-WebRequest -Uri $braveUrl -OutFile $braveInstaller -UseBasicParsing
+          Start-Process -FilePath $braveInstaller -ArgumentList "/silent", "/install" -Wait
+          Remove-Item $braveInstaller -Force -ErrorAction SilentlyContinue
+          Write-Host "✅ Brave instalado"
+
+      # =========================================================
+      # 3. INSTALAR PYTHON 3.11
+      # =========================================================
+      - name: Install Python 3.11
+        run: |
+          Write-Host "Instalando Python 3.11..."
+          $pyUrl = "https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe"
+          $pyInstaller = "$env:TEMP\python_installer.exe"
+          Invoke-WebRequest -Uri $pyUrl -OutFile $pyInstaller -UseBasicParsing
+          Start-Process -FilePath $pyInstaller -ArgumentList `
+            "/quiet", "InstallAllUsers=1", "PrependPath=1", "Include_pip=1" -Wait
+          Remove-Item $pyInstaller -Force -ErrorAction SilentlyContinue
+
+          # Refrescar PATH
+          $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" + `
+                      [System.Environment]::GetEnvironmentVariable("PATH","User")
+
+          python --version
+          pip --version
+          Write-Host "✅ Python instalado"
+
+      # =========================================================
+      # 4. INSTALAR FFMPEG
+      # =========================================================
+      - name: Install FFmpeg
+        run: |
+          Write-Host "Instalando FFmpeg..."
+          $ffmpegUrl  = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
+          $ffmpegZip  = "$env:TEMP\ffmpeg.zip"
+          $ffmpegDest = "C:\ffmpeg"
+
+          Invoke-WebRequest -Uri $ffmpegUrl -OutFile $ffmpegZip -UseBasicParsing
+          Expand-Archive -Path $ffmpegZip -DestinationPath $ffmpegDest -Force
+          Remove-Item $ffmpegZip -Force
+
+          # Mover binarios a raíz de C:\ffmpeg\bin
+          $inner = Get-ChildItem $ffmpegDest -Directory | Select-Object -First 1
+          if ($inner) {
+            Copy-Item "$($inner.FullName)\bin\*" "$ffmpegDest\" -Force
+          }
+
+          # Agregar al PATH del sistema
+          $currentPath = [System.Environment]::GetEnvironmentVariable("PATH","Machine")
+          [System.Environment]::SetEnvironmentVariable("PATH", "$currentPath;$ffmpegDest", "Machine")
+          $env:PATH += ";$ffmpegDest"
+
+          ffmpeg -version | Select-Object -First 1
+          ffprobe -version | Select-Object -First 1
+          Write-Host "✅ FFmpeg instalado"
+
+      # =========================================================
+      # 5. INSTALAR DEPENDENCIAS PYTHON — CÓDIGO 1
+      #    gradio>=4.0.0  cloudscraper  huggingface_hub
+      # =========================================================
+      - name: Install Python deps (Script 1 - Video Converter Pro)
+        run: |
+          $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" + `
+                      [System.Environment]::GetEnvironmentVariable("PATH","User")
+          pip install --upgrade "gradio>=4.0.0" cloudscraper huggingface_hub
+          Write-Host "✅ Deps Script 1 instaladas"
+
+      # =========================================================
+      # 6. INSTALAR DEPENDENCIAS PYTHON — CÓDIGO 2
+      #    gradio>=5.0  requests  psutil
+      # =========================================================
+      - name: Install Python deps (Script 2 - HLS DASH Converter)
+        run: |
+          $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" + `
+                      [System.Environment]::GetEnvironmentVariable("PATH","User")
+          pip install --upgrade "gradio>=5.0" requests psutil
+          Write-Host "✅ Deps Script 2 instaladas"
+
+      # =========================================================
+      # 7. ESCRIBIR CÓDIGO 1 — Video Converter Pro v2.0
+      # =========================================================
+      - name: Write Script 1 - Video Converter Pro
+        run: |
+          $code = @'
+import sys
+import os
+import subprocess
+import re
+import json
+import tempfile
+import shutil
+from pathlib import Path
+from typing import Optional, List, Tuple
+
+import gradio as gr
+from huggingface_hub import HfApi, list_models
+
+CUSTOM_CSS = """
+body { background-color: #0f0f1a; color: #f8fafc; font-family: 'Segoe UI', sans-serif; }
+.gradio-container { background-color: #0f0f1a !important; color: #f8fafc !important; }
+footer { display: none !important; }
+.gr-button-primary { background-color: #6366f1 !important; border: none !important; color: white !important; }
+.gr-button-primary:hover { background-color: #818cf8 !important; }
+.gr-textbox, .gr-dropdown, .gr-radio { background-color: #252542 !important; color: #f8fafc !important; border: 1px solid #2d2d4a !important; }
+.gr-box { background-color: #1a1a2e !important; border: 1px solid #2d2d4a !important; }
+"""
+
+class AudioTrack:
+    def __init__(self, index, stream_index, codec, language, channels, title=""):
+        self.index = index
+        self.stream_index = stream_index
+        self.codec = codec
+        self.language = language
+        self.channels = channels
+        self.title = title
+
+    def display_name(self):
+        lang = self.language if self.language != "und" else "Unknown"
+        ch = f"{self.channels}ch" if self.channels else ""
+        title_part = f" - {self.title}" if self.title else ""
+        return f"[{self.index}] {lang} | {self.codec} {ch}{title_part}"
+
+class SubtitleTrack:
+    def __init__(self, index, stream_index, codec, language, title="", forced=False):
+        self.index = index
+        self.stream_index = stream_index
+        self.codec = codec
+        self.language = language
+        self.title = title
+        self.forced = forced
+
+    def display_name(self):
+        lang = self.language if self.language != "und" else "Unknown"
+        forced_tag = " (Forced)" if self.forced else ""
+        title_part = f" - {self.title}" if self.title else ""
+        return f"[{self.index}] {lang} | {self.codec}{forced_tag}{title_part}"
+
+class MediaInfo:
+    def __init__(self, path):
+        self.path = path
+        self.audio_tracks: List[AudioTrack] = []
+        self.subtitle_tracks: List[SubtitleTrack] = []
+        self.duration = 0.0
+        self.title: Optional[str] = None
+
+class MediaAnalyzer:
+    @staticmethod
+    def get_media_info(source: str) -> MediaInfo:
+        info = MediaInfo(path=source)
+        try:
+            cmd = ["ffprobe", "-v", "quiet", "-print_format", "json",
+                   "-show_format", "-show_streams", source]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            if result.returncode != 0: return info
+            data = json.loads(result.stdout)
+            format_tags = data.get("format", {}).get("tags", {})
+            info.title = format_tags.get("title") or format_tags.get("TITLE")
+            if info.title: info.title = info.title.strip()
+            if "format" in data and "duration" in data["format"]:
+                info.duration = float(data["format"]["duration"])
+            audio_idx, sub_idx = 0, 0
+            for stream in data.get("streams", []):
+                codec_type = stream.get("codec_type", "")
+                tags = stream.get("tags", {})
+                if codec_type == "audio":
+                    track = AudioTrack(audio_idx, stream.get("index", 0),
+                                       stream.get("codec_name", "unknown"),
+                                       tags.get("language", "und"),
+                                       stream.get("channels", 2),
+                                       tags.get("title", ""))
+                    info.audio_tracks.append(track)
+                    audio_idx += 1
+                elif codec_type == "subtitle":
+                    disposition = stream.get("disposition", {})
+                    track = SubtitleTrack(sub_idx, stream.get("index", 0),
+                                          stream.get("codec_name", "unknown"),
+                                          tags.get("language", "und"),
+                                          tags.get("title", ""),
+                                          disposition.get("forced", 0) == 1)
+                    info.subtitle_tracks.append(track)
+                    sub_idx += 1
+        except Exception as e:
+            print(f"Error analyzing: {e}")
+        return info
+
+class VideoConverter:
+    def __init__(self):
+        self.current_process = None
+        self.cancelled = False
+
+    def cancel(self):
+        self.cancelled = True
+        if self.current_process:
+            try: self.current_process.terminate()
+            except: pass
+
+    def run_ffmpeg(self, cmd, duration, progress=None, msg=""):
+        try:
+            self.current_process = subprocess.Popen(
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+            pattern = re.compile(r"time=(\d{2}):(\d{2}):(\d{2})\.(\d{2})")
+            for line in self.current_process.stderr:
+                if self.cancelled: return False, "Cancelado"
+                match = pattern.search(line)
+                if match and duration > 0:
+                    h, m, s, ms = map(int, match.groups())
+                    current = h * 3600 + m * 60 + s + ms / 100
+                    percent = min(100, (current / duration) * 100)
+                    if progress: progress(percent / 100, desc=f"{msg}: {percent:.0f}%")
+            self.current_process.wait()
+            return self.current_process.returncode == 0, "OK"
+        except Exception as e:
+            return False, str(e)
+
+    def convert(self, source, is_url, mode, output_dir,
+                selected_audio, generate_single, extract_sub, sub_index,
+                progress=None, log_func=print):
+        self.cancelled = False
+        temp_folder = None
+        try:
+            extra_input_options = []
+            if is_url:
+                extra_input_options = ["-user_agent", "Mozilla/5.0",
+                                       "-headers", "Referer: https://google.com\r\n"]
+            info = MediaAnalyzer.get_media_info(source)
+            duration = info.duration if info.duration > 0 else 1
+            base_name = info.title if info.title else Path(source).stem
+            if not base_name or base_name.strip() == "": base_name = "video_sin_nombre"
+            folder_name = re.sub(r'[<>:"/\\|?*]', '_', base_name)
+            folder_name = re.sub(r'\s+', ' ', folder_name).strip().replace(' ', '_')
+            for old, new in [("a","4"),("A","4"),("i","1"),("I","1"),("o","0"),("O","0")]:
+                folder_name = folder_name.replace(old, new)
+            folder_name = folder_name[:150]
+            temp_folder = tempfile.mkdtemp(prefix="video_conv_")
+            out_folder = os.path.join(temp_folder, folder_name)
+            os.makedirs(out_folder, exist_ok=True)
+            log_func(f"Carpeta creada: {folder_name}")
+
+            all_audio_path = os.path.join(out_folder, f"{folder_name}_all_audio.mp4")
+            cmd = ["ffmpeg", "-y"] + extra_input_options + ["-i", source]
+            cmd.extend(["-map", "0:v:0"])
+            for i in range(len(info.audio_tracks)):
+                cmd.extend(["-map", f"0:a:{i}"])
+            cmd.extend(["-c:v", "copy"])
+            if mode == "Video Copy + Audio MP3":
+                for i in range(len(info.audio_tracks)):
+                    cmd.extend([f"-c:a:{i}", "libmp3lame", f"-b:a:{i}", "320k", f"-ar:a:{i}", "48000"])
+            elif mode == "Video Copy + Audio FLAC":
+                for i in range(len(info.audio_tracks)):
+                    cmd.extend([f"-c:a:{i}", "flac", f"-compression_level:a:{i}", "0"])
+            else:
+                cmd = ["ffmpeg", "-y"] + extra_input_options + ["-i", source]
+                cmd.extend(["-map", "0:v:0"])
+                for i in range(len(info.audio_tracks)):
+                    cmd.extend(["-map", f"0:a:{i}"])
+                cmd.extend(["-c:v", "libx264", "-vf", "scale=-2:1080", "-preset", "slow", "-crf", "18"])
+                for i in range(len(info.audio_tracks)):
+                    cmd.extend([f"-c:a:{i}", "libmp3lame", f"-b:a:{i}", "320k", f"-ar:a:{i}", "48000"])
+            cmd.extend(["-map_metadata", "0", "-metadata", "copyright=Power Prods", all_audio_path])
+            success, msg_r = self.run_ffmpeg(cmd, duration, progress, "Renderizado")
+            if not success or self.cancelled:
+                return False, f"Error: {msg_r}", None
+
+            if generate_single is True and selected_audio < len(info.audio_tracks):
+                single_path = os.path.join(out_folder, f"{folder_name}_audio_{selected_audio}.mp4")
+                single_cmd = ["ffmpeg", "-y", "-i", all_audio_path,
+                               "-map", "0:v:0", "-map", f"0:a:{selected_audio}",
+                               "-c", "copy", "-map_metadata", "0", single_path]
+                self.run_ffmpeg(single_cmd, duration, progress, "Extraccion")
+
+            if extract_sub is True and info.subtitle_tracks and sub_index < len(info.subtitle_tracks):
+                vtt_path = os.path.join(out_folder, f"{folder_name}_sub_{sub_index}.vtt")
+                sub_cmd = ["ffmpeg", "-y"] + extra_input_options + [
+                    "-i", source, "-map", f"0:s:{sub_index}", "-c:s", "webvtt", vtt_path]
+                try:
+                    subprocess.run(sub_cmd, capture_output=True, check=True, timeout=120)
+                except Exception as e:
+                    log_func(f"Error subtitulo: {e}")
+
+            return True, "Conversion completada", out_folder
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return False, f"Error critico: {e}", None
+
+def get_user_models(token):
+    if not token:
+        return gr.update(choices=[], value=None, interactive=True)
+    try:
+        api = HfApi(token=token)
+        user_info = api.whoami(token=token)
+        username = user_info["name"]
+        models = list(list_models(token=token, author=username, limit=100))
+        choices = [m.modelId for m in models]
+        return gr.update(choices=choices, value=choices[0] if choices else None, interactive=True)
+    except Exception as e:
+        return gr.update(choices=[], interactive=True)
+
+def upload_to_hf(folder_path, repo_id, token, log_func=print):
+    try:
+        api = HfApi(token=token)
+        folder_name = os.path.basename(folder_path)
+        repo_path = f"videos/{folder_name}"
+        api.upload_folder(folder_path=folder_path, repo_id=repo_id,
+                          repo_type="model", path_in_repo=repo_path)
+        return True, f"Subido a {repo_id}/{repo_path}"
+    except Exception as e:
+        return False, f"Error subiendo: {e}"
+
+converter = VideoConverter()
+
+def analyze_media(file_input, url_input):
+    source = None; is_url = False
+    if file_input: source = file_input.name
+    elif url_input: source = url_input; is_url = True
+    else: return None, None, "Sin fuente."
+    info = MediaAnalyzer.get_media_info(source)
+    audio_choices = [f"{i}: {t.display_name()}" for i, t in enumerate(info.audio_tracks)]
+    sub_choices   = [f"{i}: {t.display_name()}" for i, t in enumerate(info.subtitle_tracks)]
+    text = (f"Analizado: {info.title or os.path.basename(source)}\n"
+            f"Duracion: {info.duration:.1f}s\n"
+            f"Audios: {len(info.audio_tracks)} | Subs: {len(info.subtitle_tracks)}")
+    return (gr.update(choices=audio_choices, value=audio_choices[0] if audio_choices else None, interactive=True),
+            gr.update(choices=sub_choices,   value=sub_choices[0]   if sub_choices   else None, interactive=True),
+            text)
+
+def process_and_upload(file_input, url_input, token, target_model, mode,
+                       audio_idx_str, sub_idx_str, generate_single, extract_sub,
+                       progress=gr.Progress()):
+    source = None; is_url = False
+    if file_input: source = file_input.name
+    elif url_input: source = url_input; is_url = True
+    else: return "Sin fuente.", "Error"
+    try:
+        audio_idx = int(audio_idx_str.split(":")[0]) if audio_idx_str and ":" in audio_idx_str else 0
+        sub_idx   = int(sub_idx_str.split(":")[0])   if sub_idx_str   and ":" in sub_idx_str   else 0
+    except:
+        return "Pistas invalidas.", "Error"
+    if not target_model: return "Selecciona repo destino.", "Error"
+    logs = []
+    def log(m): logs.append(m); print(m)
+    success, msg, out_folder = converter.convert(
+        source, is_url, mode, "", audio_idx, generate_single,
+        extract_sub, sub_idx, progress=progress, log_func=log)
+    if not success:
+        return "\n".join(logs) + "\n" + msg, "Fallo"
+    upload_success, upload_msg = upload_to_hf(out_folder, target_model, token, log)
+    if out_folder and os.path.exists(out_folder):
+        try: shutil.rmtree(os.path.dirname(out_folder))
+        except: pass
+    return "\n".join(logs) + "\n" + upload_msg, "Listo" if upload_success else "Con advertencias"
+
+with gr.Blocks(theme=gr.themes.Soft(), css=CUSTOM_CSS) as demo:
+    gr.Markdown("# Video Converter Pro v2.0")
+    with gr.Row():
+        with gr.Column(scale=1):
+            token_input    = gr.Textbox(label="HF Token", value=os.getenv("HF_TOKEN",""), type="password")
+            btn_load       = gr.Button("Cargar Modelos", size="sm")
+            target_model   = gr.Dropdown(label="Repositorio Destino", choices=[], interactive=False)
+            mode_radio     = gr.Radio(
+                choices=["Video Copy + Audio MP3","Video Copy + Audio FLAC","Video H264 1080p + Audio MP3"],
+                value="Video Copy + Audio MP3", label="Modo")
+            gen_single_cb  = gr.Checkbox(label="Generar version audio individual", value=False)
+            extract_sub_cb = gr.Checkbox(label="Extraer subtitulo", value=False)
+            audio_dd       = gr.Dropdown(label="Pista Audio", choices=[])
+            sub_dd         = gr.Dropdown(label="Pista Subtitulo", choices=[])
+        with gr.Column(scale=2):
+            with gr.Tab("Archivo"): file_input = gr.File(label="Subir Video", file_types=["video"])
+            with gr.Tab("URL"):     url_input  = gr.Textbox(label="Enlace", placeholder="https://...")
+            btn_analyze   = gr.Button("Analizar", variant="secondary")
+            analysis_info = gr.Textbox(label="Info", lines=3, interactive=False)
+            btn_process   = gr.Button("PROCESAR Y SUBIR", variant="primary", size="lg")
+            log_output    = gr.Textbox(label="Log", lines=15, interactive=False)
+    btn_load.click(fn=get_user_models, inputs=[token_input], outputs=[target_model])
+    btn_analyze.click(fn=analyze_media, inputs=[file_input, url_input],
+                      outputs=[audio_dd, sub_dd, analysis_info])
+    btn_process.click(fn=process_and_upload,
+                      inputs=[file_input, url_input, token_input, target_model, mode_radio,
+                              audio_dd, sub_dd, gen_single_cb, extract_sub_cb],
+                      outputs=[log_output, analysis_info])
+
+if __name__ == "__main__":
+    demo.launch()
+'@
+          Set-Content -Path "C:\scripts\video_converter.py" -Value $code -Encoding UTF8
+          Write-Host "✅ Script 1 escrito en C:\scripts\video_converter.py"
+        shell: powershell
+
+      # =========================================================
+      # 8. ESCRIBIR CÓDIGO 2 — HLS/DASH Converter EXTREME
+      # =========================================================
+      - name: Write Script 2 - HLS DASH Converter EXTREME
+        run: |
+          New-Item -ItemType Directory -Force -Path "C:\scripts" | Out-Null
+          $code = @'
+import gradio as gr
+import subprocess
+import os
+import json
+import re
+import shutil
+from pathlib import Path
+from urllib.parse import urlparse, unquote
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import tempfile
+import requests
+import psutil
+
+def setup_ramdisk():
+    try:
+        ramdisk_path = Path("/dev/shm/video_processing")
+        ramdisk_path.mkdir(exist_ok=True, parents=True)
+        return ramdisk_path
+    except:
+        tmp_path = Path(tempfile.gettempdir()) / "video_processing"
+        tmp_path.mkdir(exist_ok=True)
+        return tmp_path
+
+def get_optimal_threads():
+    try:
+        return max(len(os.sched_getaffinity(0)) - 1, 1)
+    except:
+        return max((os.cpu_count() or 4) - 1, 1)
+
+RAMDISK_PATH   = setup_ramdisk()
+OPTIMAL_THREADS = get_optimal_threads()
+print(f"CPU Threads: {OPTIMAL_THREADS} | RAM Disk: {RAMDISK_PATH}")
+
+for git_cmd in [
+    ["git","config","--global","user.email","actions@github.com"],
+    ["git","config","--global","user.name","Hugging Face Space"],
+    ["git","config","--global","core.compression","0"],
+    ["git","config","--global","pack.threads",str(OPTIMAL_THREADS)],
+]:
+    subprocess.run(git_cmd, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+def is_live_stream(src):
+    if not src.startswith(("http://","https://")): return False
+    if any(src.lower().endswith(e) for e in [".mp4",".mkv",".avi",".mov",".wmv",".flv",".webm",".ts"]): return False
+    return any(p in src.lower() for p in ["/live/","/stream/",".m3u8",".mpd","/hls/","/dash/"])
+
+def get_input_args(src):
+    ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    if not src.startswith(("http://","https://")):
+        return ["-analyzeduration","100000000","-probesize","100000000","-fflags","+genpts+igndts"]
+    if is_live_stream(src):
+        return ["-user_agent",ua,"-timeout","10000000","-reconnect","1",
+                "-reconnect_streamed","1","-reconnect_delay_max","5",
+                "-fflags","+fastseek+genpts","-probesize","50M","-analyzeduration","20M"]
+    return ["-user_agent",ua,"-timeout","30000000","-reconnect","1",
+            "-reconnect_streamed","1","-reconnect_delay_max","5",
+            "-analyzeduration","200000000","-probesize","200000000",
+            "-fflags","+genpts+igndts","-err_detect","ignore_err",
+            "-max_delay","5000000","-rw_timeout","30000000"]
+
+def get_copy_optimization_args():
+    return ["-max_muxing_queue_size","9999","-avoid_negative_ts","make_zero",
+            "-fflags","+genpts+igndts+flush_packets","-copytb","1","-start_at_zero",
+            "-threads",str(OPTIMAL_THREADS),"-thread_queue_size","4096"]
+
+def get_render_optimization_args():
+    return ["-threads",str(OPTIMAL_THREADS),"-thread_type","slice+frame",
+            "-slices",str(OPTIMAL_THREADS),"-max_muxing_queue_size","9999",
+            "-thread_queue_size","4096"]
+
+def clean_for_folder(n): return re.sub(r'[<>:"/\\|?*]','_',n).strip()[:200]
+def clean_for_repo(n):
+    n = re.sub(r'[^a-zA-Z0-9_-]','-',n)
+    return re.sub(r'-+','-',n).strip('-')[:100]
+
+def build_name(content_type, movie_name, serie_name, season, ep_start, ep_index):
+    if content_type == "Pelicula":
+        base = movie_name.strip() or "Pelicula"
+        return clean_for_folder(base), clean_for_repo(base)
+    name = serie_name.strip() or "Serie"
+    try: temp = int(season)
+    except: temp = 1
+    try: ep_num = int(ep_start) + ep_index
+    except: ep_num = ep_index + 1
+    label = f"{name}_T{temp}_Ep{ep_num}"
+    return clean_for_folder(label), clean_for_repo(label)
+
+def detect_video_duration(src, input_args):
+    cmd = ["ffprobe","-v","error"] + input_args + [
+        "-show_entries","format=duration","-of","json","-i",src]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        d = json.loads(r.stdout).get("format",{}).get("duration")
+        return float(d) if d and d != "N/A" else None
+    except: return None
+
+def detect_audio_streams(src, input_args):
+    cmd = ["ffprobe","-v","error"] + input_args + [
+        "-select_streams","a",
+        "-show_entries","stream=index,codec_name:stream_tags=language,title",
+        "-of","json","-i",src]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        streams = json.loads(r.stdout).get("streams",[])
+        return [{"index":s.get("index",0),
+                 "language":s.get("tags",{}).get("language","und"),
+                 "title":s.get("tags",{}).get("title",f"Audio {s.get('index',0)}"),
+                 "codec":s.get("codec_name","unknown")} for s in streams]
+    except: return []
+
+def prioritize_audio_tracks(tracks):
+    pri = ["spa","es","spanish","espanol","latino","lat","es-mx","es-419"]
+    def key(t):
+        l = t["language"].lower(); ti = t["title"].lower()
+        for p in pri:
+            if p in l or p in ti: return 0
+        return 1 if l == "und" else 2
+    return sorted(tracks, key=key)
+
+def create_master_m3u8(output_dir, video_streams, audio_playlists):
+    content = "#EXTM3U\n#EXT-X-VERSION:7\n\n"
+    for ap in audio_playlists:
+        d = "YES" if ap["is_default"] else "NO"
+        content += f'#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="{ap["title"]}",LANGUAGE="{ap["language"]}",DEFAULT={d},AUTOSELECT={d},URI="{ap["file"]}"\n'
+    content += "\n"
+    for v in video_streams:
+        content += f'#EXT-X-STREAM-INF:BANDWIDTH={v["bandwidth"]},RESOLUTION={v["resolution"]},CODECS="{v["codecs"]}",AUDIO="audio"\n{v["file"]}\n'
+    (output_dir / "master.m3u8").write_text(content)
+
+def clone_m3u8_with_same_segments(src_m3u8, dest_m3u8):
+    dest_m3u8.write_text(src_m3u8.read_text())
+
+def process_audio_track_parallel(args):
+    track, i, total, source_val, output_dir, _, ffmpeg_input_args = args
+    temp_dir = RAMDISK_PATH / f"audio_temp_{os.getpid()}_{i}"
+    try:
+        temp_dir.mkdir(exist_ok=True)
+        audio_file = temp_dir / f"audio_{i}.m3u8"
+        seg_audio  = temp_dir / f"audio_{i}_%03d.ts"
+        cmd = (["ffmpeg","-hide_banner","-threads",str(OPTIMAL_THREADS)]
+               + ffmpeg_input_args
+               + ["-i",source_val,"-map",f"0:{track['index']}",
+                  "-c:a","libmp3lame","-b:a","192k","-ar","48000","-ac","2",
+                  "-threads",str(OPTIMAL_THREADS),"-max_muxing_queue_size","9999",
+                  "-thread_queue_size","4096",
+                  "-hls_time","5","-hls_list_size","0",
+                  "-hls_segment_filename",str(seg_audio),
+                  "-hls_flags","independent_segments+append_list+temp_file",
+                  "-hls_playlist_type","vod","-hls_segment_type","mpegts",
+                  str(audio_file),"-y","-loglevel","warning"])
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=7200)
+        if result.returncode != 0 or not audio_file.exists():
+            return {"success":False,"index":i,"error":result.stderr[-300:],"track":track}
+        ts_files = list(temp_dir.glob(f"audio_{i}_*.ts"))
+        if not ts_files:
+            return {"success":False,"index":i,"error":"No TS generados","track":track}
+        shutil.move(str(audio_file), str(output_dir / f"audio_{i}.m3u8"))
+        for ts in ts_files: shutil.move(str(ts), str(output_dir / ts.name))
+        return {"success":True,"index":i,"track":track,"segments_count":len(ts_files),
+                "playlist":{"file":f"audio_{i}.m3u8","language":track["language"],
+                             "title":track["title"],"is_default":i==0}}
+    except Exception as e:
+        return {"success":False,"index":i,"error":str(e),"track":track}
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+def process_bulk(token, input_file, input_urls, conversion_option, stream_format,
+                 batch_size_vid, delete_local, max_workers,
+                 content_type, movie_name, serie_name, season, ep_start,
+                 progress=gr.Progress()):
+    logs = [f"Iniciando EXTREME (CPU:{OPTIMAL_THREADS} threads, RAM:{RAMDISK_PATH})"]
+    try:
+        if not token: raise Exception("Se requiere Token de GitHub.")
+        sources = []
+        files_list = input_file if isinstance(input_file, list) else ([input_file] if input_file else [])
+        for f in files_list: sources.append({"type":"file","value":f.name})
+        if input_urls:
+            for line in input_urls.split("\n"):
+                url = line.strip()
+                if url: sources.append({"type":"url","value":url})
+        if not sources: raise Exception("Agrega archivos o URLs.")
+
+        total_sources = len(sources)
+        final_links   = []
+
+        for idx, source in enumerate(sources):
+            is_file    = source["type"] == "file"
+            source_val = source["value"]
+            folder_name, repo_name = build_name(content_type, movie_name, serie_name, season, ep_start, idx)
+            logs.append(f"[{idx+1}/{total_sources}] {folder_name}")
+            yield "\n".join(logs), logs, ""
+
+            ffmpeg_input_args = get_input_args(source_val)
+            duration = detect_video_duration(source_val, ffmpeg_input_args)
+            if duration:
+                h,m,s = int(duration//3600), int((duration%3600)//60), int(duration%60)
+                logs.append(f"  Duracion: {h:02d}:{m:02d}:{s:02d}")
+            else:
+                logs.append("  No se pudo detectar duracion")
+            yield "\n".join(logs), logs, ""
+
+            base_dir   = Path(source_val).parent if is_file else Path.cwd()
+            output_dir = base_dir / folder_name
+            output_dir.mkdir(exist_ok=True)
+
+            audio_tracks = detect_audio_streams(source_val, ffmpeg_input_args) or \
+                           [{"index":0,"language":"und","title":"Audio","codec":"unknown"}]
+            audio_tracks = prioritize_audio_tracks(audio_tracks)
+            logs.append(f"  {len(audio_tracks)} streams de audio detectados")
+            yield "\n".join(logs), logs, ""
+
+            manifest_file = ""
+
+            if stream_format == "HLS (M3U8)":
+                audio_args = [(t,i,len(audio_tracks),source_val,output_dir,False,ffmpeg_input_args)
+                              for i,t in enumerate(audio_tracks)]
+                audio_playlists = []
+                with ThreadPoolExecutor(max_workers=max_workers) as exe:
+                    for future in as_completed({exe.submit(process_audio_track_parallel,a):a for a in audio_args}):
+                        res = future.result()
+                        if res["success"]:
+                            audio_playlists.append(res["playlist"])
+                            logs.append(f"  Audio {res['index']+1} OK ({res.get('segments_count',0)} segs)")
+                        else:
+                            logs.append(f"  Error Audio {res['index']+1}: {res.get('error','?')[:80]}")
+                        yield "\n".join(logs), logs, ""
+                audio_playlists.sort(key=lambda x: int(x["file"].split("_")[1].split(".")[0]))
+                if not audio_playlists: raise Exception("Ningun audio procesado")
+
+                video_streams = []
+                if conversion_option in ["Opcion 1: Copy Video","Opcion 2: Copy Video + MP3"]:
+                    temp_vd = RAMDISK_PATH / f"video_temp_{idx}"
+                    temp_vd.mkdir(exist_ok=True)
+                    v_file  = temp_vd / "video_1080p.m3u8"
+                    v_seg   = temp_vd / "video_1080p_%03d.ts"
+                    cmd = (["ffmpeg","-hide_banner","-threads",str(OPTIMAL_THREADS)]
+                           + ffmpeg_input_args
+                           + ["-i",source_val,"-map","0:v:0","-c:v","copy","-an"]
+                           + get_copy_optimization_args()
+                           + ["-hls_time","5","-hls_list_size","0",
+                              "-hls_segment_filename",str(v_seg),
+                              "-hls_flags","independent_segments+append_list+temp_file",
+                              "-hls_playlist_type","vod","-hls_segment_type","mpegts",
+                              str(v_file),"-y","-loglevel","error"])
+                    r = subprocess.run(cmd, capture_output=True, text=True, timeout=7200)
+                    if r.returncode != 0:
+                        shutil.rmtree(temp_vd, ignore_errors=True)
+                        raise Exception(f"Video copy error: {r.stderr[-300:]}")
+                    final_1080 = output_dir / "video_1080p.m3u8"
+                    shutil.move(str(v_file), str(final_1080))
+                    for ts in temp_vd.glob("video_1080p_*.ts"):
+                        shutil.move(str(ts), str(output_dir/ts.name))
+                    shutil.rmtree(temp_vd, ignore_errors=True)
+                    clone_m3u8_with_same_segments(final_1080, output_dir/"video_720p.m3u8")
+                    video_streams = [
+                        {"file":"video_1080p.m3u8","resolution":"1920x1080","bandwidth":5000000,"codecs":"avc1.640028"},
+                        {"file":"video_720p.m3u8", "resolution":"1280x720", "bandwidth":3000000,"codecs":"avc1.640028"},
+                    ]
+                else:
+                    if "4K" in conversion_option:
+                        res_list = [
+                            {"label":"4K",   "scale":"scale=-2:2160","bitrate":"15000k","bufsize":"30000k","res":"3840x2160"},
+                            {"label":"1080p","scale":"scale=-2:1080","bitrate":"5000k", "bufsize":"10000k","res":"1920x1080"},
+                            {"label":"720p", "scale":"scale=-2:720", "bitrate":"2800k", "bufsize":"5600k", "res":"1280x720"},
+                        ]
+                    else:
+                        res_list = [
+                            {"label":"1080p","scale":"scale=-2:1080","bitrate":"5000k", "bufsize":"10000k","res":"1920x1080"},
+                            {"label":"720p", "scale":"scale=-2:720", "bitrate":"2800k", "bufsize":"5600k", "res":"1280x720"},
+                        ]
+                    for rc in res_list:
+                        tmp = RAMDISK_PATH / f"render_{rc['label']}"
+                        tmp.mkdir(exist_ok=True)
+                        vf  = tmp / f"video_{rc['label']}.m3u8"
+                        vs  = tmp / f"video_{rc['label']}_%03d.ts"
+                        cmd = (["ffmpeg","-hide_banner","-threads",str(OPTIMAL_THREADS)]
+                               + ffmpeg_input_args
+                               + ["-i",source_val,"-map","0:v:0","-an",
+                                  "-c:v","libx264","-preset","ultrafast","-crf","23",
+                                  "-vf",rc["scale"],"-b:v",rc["bitrate"],
+                                  "-maxrate",rc["bitrate"],"-bufsize",rc["bufsize"],"-pix_fmt","yuv420p"]
+                               + get_render_optimization_args()
+                               + ["-hls_time","5","-hls_list_size","0",
+                                  "-hls_segment_filename",str(vs),
+                                  "-hls_flags","independent_segments+append_list+temp_file",
+                                  "-hls_playlist_type","vod","-hls_segment_type","mpegts",
+                                  str(vf),"-y","-loglevel","error"])
+                        r = subprocess.run(cmd, capture_output=True, text=True, timeout=14400)
+                        if r.returncode != 0:
+                            shutil.rmtree(tmp, ignore_errors=True); continue
+                        final_m = output_dir / f"video_{rc['label']}.m3u8"
+                        shutil.move(str(vf), str(final_m))
+                        for ts in tmp.glob(f"video_{rc['label']}_*.ts"):
+                            shutil.move(str(ts), str(output_dir/ts.name))
+                        shutil.rmtree(tmp, ignore_errors=True)
+                        video_streams.append({"file":f"video_{rc['label']}.m3u8","resolution":rc["res"],
+                                              "bandwidth":int(rc["bitrate"].replace("k","000"))+192000,
+                                              "codecs":"avc1.640028"})
+                if not video_streams: raise Exception("Sin video generado")
+                create_master_m3u8(output_dir, video_streams, audio_playlists)
+                manifest_file = "master.m3u8"
+
+            elif stream_format == "DASH (MPD)":
+                tmp_dash = RAMDISK_PATH / f"dash_{idx}"
+                tmp_dash.mkdir(exist_ok=True)
+                v_codec = "copy" if "Copy" in conversion_option else "libx264"
+                cmd = (["ffmpeg","-hide_banner","-threads",str(OPTIMAL_THREADS)]
+                       + ffmpeg_input_args + ["-i",source_val,"-map","0:v:0","-c:v:0",v_codec])
+                if v_codec != "copy":
+                    cmd += ["-preset","ultrafast","-crf","23"]
+                for i,t in enumerate(audio_tracks):
+                    cmd += ["-map",f"0:{t['index']}",
+                            f"-c:a:{i}","aac",f"-b:a:{i}","192k",
+                            f"-ar:a:{i}","48000",f"-ac:a:{i}","2"]
+                mpd_out = tmp_dash / "manifest.mpd"
+                cmd += (get_copy_optimization_args() if v_codec=="copy" else get_render_optimization_args())
+                cmd += ["-f","dash","-seg_duration","5","-use_template","1","-use_timeline","0",
+                        "-init_seg_name","init-$RepresentationID$.m4s",
+                        "-media_seg_name","chunk-$RepresentationID$-$Number%05d$.m4s",
+                        str(mpd_out),"-y","-loglevel","error"]
+                r = subprocess.run(cmd, capture_output=True, text=True, timeout=14400)
+                if r.returncode != 0:
+                    shutil.rmtree(tmp_dash, ignore_errors=True)
+                    raise Exception(f"DASH error: {r.stderr[-300:]}")
+                shutil.move(str(mpd_out), str(output_dir/"manifest.mpd"))
+                for m4s in tmp_dash.glob("*.m4s"):
+                    shutil.move(str(m4s), str(output_dir/m4s.name))
+                shutil.rmtree(tmp_dash, ignore_errors=True)
+                manifest_file = "manifest.mpd"
+
+            headers  = {"Authorization":f"token {token}"}
+            r_repo   = requests.post("https://api.github.com/user/repos", headers=headers,
+                                     json={"name":repo_name,"private":True}, timeout=30)
+            if r_repo.status_code == 422:
+                username = requests.get("https://api.github.com/user",headers=headers).json()["login"]
+                html_url = f"https://github.com/{username}/{repo_name}"
+            else:
+                html_url = r_repo.json()["html_url"]
+
+            repo_git_url = html_url.replace("https://",f"https://{token}@") + ".git"
+            git_dir = str(output_dir)
+            for gc in [["git","init"],["git","checkout","-b","main"],
+                       ["git","remote","add","origin",repo_git_url],
+                       ["git","config","http.postBuffer","524288000"],
+                       ["git","config","core.compression","0"]]:
+                subprocess.run(gc, cwd=git_dir, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+            files = os.listdir(git_dir)
+            ext_seg = ".m4s" if stream_format == "DASH (MPD)" else ".ts"
+            ext_man = ".mpd" if stream_format == "DASH (MPD)" else ".m3u8"
+            seg_files      = [f for f in files if f.endswith(ext_seg)]
+            manifest_files = [f for f in files if f.endswith(ext_man)]
+
+            subprocess.run(["git","add"]+manifest_files, cwd=git_dir, check=True,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(["git","commit","-m",f"Add {folder_name}"], cwd=git_dir, check=True,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+            for attempt in range(3):
+                try:
+                    subprocess.run(["git","push","-u","origin","main"], cwd=git_dir, check=True,
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=600)
+                    break
+                except:
+                    if attempt == 2:
+                        subprocess.run(["git","push","-f","origin","main"], cwd=git_dir, check=True,
+                                       stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=600)
+
+            batch_size = int(batch_size_vid)
+            for i in range(0, len(seg_files), batch_size):
+                batch = seg_files[i:i+batch_size]
+                subprocess.run(["git","add"]+batch, cwd=git_dir, check=True,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.run(["git","commit","-m",f"Batch {i}"], cwd=git_dir, check=True,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                for attempt in range(3):
+                    try:
+                        subprocess.run(["git","push","origin","main"], cwd=git_dir, check=True,
+                                       stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=600)
+                        break
+                    except:
+                        if attempt == 2:
+                            logs.append(f"  Error en batch {i}")
+                progress((idx+(i/max(len(seg_files),1)))/total_sources)
+
+            gooplay = f"https://gooplay.xyz/gp/stream.php?repo={repo_name}&branch=main&file={manifest_file}"
+            github  = f"{html_url}/blob/main/{manifest_file}"
+            final_links.append(f"{folder_name}\nGooplay: {gooplay}\nGitHub:  {github}")
+            logs.append(f"Completado: {folder_name}")
+            yield "\n".join(logs), logs, ""
+
+            if delete_local: shutil.rmtree(output_dir, ignore_errors=True)
+
+        yield "\n".join(logs), logs, "\n\n".join(final_links)
+
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        logs.append(f"ERROR: {e}")
+        yield "\n".join(logs), logs, ""
+
+with gr.Blocks(theme=gr.themes.Soft()) as demo:
+    gr.Markdown(f"# HLS/DASH Converter EXTREME  |  CPU:{OPTIMAL_THREADS}t | RAM:{RAMDISK_PATH}")
+    with gr.Row():
+        with gr.Column(scale=1):
+            token          = gr.Textbox(label="GitHub Token", type="password", placeholder="ghp_...")
+            input_file     = gr.File(label="Archivos", file_count="multiple")
+            input_urls     = gr.Textbox(label="URLs (una por linea)", lines=4)
+            conv_option    = gr.Dropdown(
+                ["Opcion 1: Copy Video","Opcion 2: Copy Video + MP3",
+                 "Opcion 3: Multi-Res 1080p+720p H264","Opcion 4: Multi-Res 4K+1080p+720p H264"],
+                value="Opcion 1: Copy Video", label="Modo de conversion")
+            stream_fmt     = gr.Dropdown(["HLS (M3U8)","DASH (MPD)"], value="HLS (M3U8)", label="Formato")
+            with gr.Row():
+                batch_vid    = gr.Number(value=30, label="Batch Git", precision=0)
+                max_wkrs     = gr.Slider(1, 8, 4, step=1, label="Workers Audio")
+            del_local      = gr.Checkbox(value=True, label="Borrar archivos locales")
+            content_type   = gr.Radio(["Pelicula","Serie"], value="Pelicula", label="Tipo")
+            movie_name     = gr.Textbox(label="Nombre pelicula", placeholder="El Padrino")
+            with gr.Group(visible=False) as sg:
+                serie_name = gr.Textbox(label="Nombre serie", placeholder="Breaking Bad")
+                with gr.Row():
+                    season   = gr.Number(label="Temporada", value=1, precision=0, minimum=1)
+                    ep_start = gr.Number(label="Episodio inicial", value=1, precision=0, minimum=1)
+            content_type.change(fn=lambda c: (gr.update(visible=c=="Pelicula"), gr.update(visible=c=="Serie")),
+                                inputs=content_type, outputs=[movie_name, sg])
+            btn = gr.Button("PROCESAR", variant="primary", size="lg")
+        with gr.Column(scale=2):
+            log_out   = gr.Textbox(label="Logs", lines=28, interactive=False)
+            links_out = gr.Textbox(label="Links generados", lines=10, interactive=False)
+    btn.click(fn=process_bulk,
+              inputs=[token,input_file,input_urls,conv_option,stream_fmt,
+                      batch_vid,del_local,max_wkrs,content_type,movie_name,serie_name,season,ep_start],
+              outputs=[log_out,gr.State(),links_out])
+
+if __name__ == "__main__":
+    demo.launch()
+'@
+          New-Item -ItemType Directory -Force -Path "C:\scripts" | Out-Null
+          Set-Content -Path "C:\scripts\hls_dash_converter.py" -Value $code -Encoding UTF8
+          Write-Host "✅ Script 2 escrito en C:\scripts\hls_dash_converter.py"
+        shell: powershell
+
+      # =========================================================
+      # 9. CONFIGURAR RDP
+      # =========================================================
+      - name: Configure RDP
+        run: |
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' `
+                           -Name "fDenyTSConnections" -Value 0 -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
+                           -Name "UserAuthentication" -Value 0 -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
+                           -Name "SecurityLayer" -Value 0 -Force
+          netsh advfirewall firewall delete rule name="RDP-Tailscale" 2>$null
+          netsh advfirewall firewall add rule name="RDP-Tailscale" `
+            dir=in action=allow protocol=TCP localport=3389
+          Restart-Service -Name TermService -Force
+
+      # =========================================================
+      # 10. CREAR USUARIO RDP
+      # =========================================================
+      - name: Create RDP User
+        run: |
+          $password   = "${{ github.event.inputs.rdp_password }}"
+          $securePass = ConvertTo-SecureString $password -AsPlainText -Force
+          New-LocalUser -Name "RDP" -Password $securePass -AccountNeverExpires
+          Add-LocalGroupMember -Group "Administrators"       -Member "RDP"
+          Add-LocalGroupMember -Group "Remote Desktop Users" -Member "RDP"
+          if (-not (Get-LocalUser -Name "RDP")) { Write-Error "User creation failed"; exit 1 }
+
+      # =========================================================
+      # 11. INSTALAR TAILSCALE
+      # =========================================================
       - name: Install Tailscale
         run: |
           $tsUrl = "https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi"
-          $installerPath = "$env:TEMP\tailscale.msi"
-          
-          Invoke-WebRequest -Uri $tsUrl -OutFile $installerPath
-          Start-Process msiexec.exe -ArgumentList "/i", "`"$installerPath`"", "/quiet", "/norestart" -Wait
-          Remove-Item $installerPath -Force
+          $tsInstaller = "$env:TEMP\tailscale.msi"
+          Invoke-WebRequest -Uri $tsUrl -OutFile $tsInstaller
+          Start-Process msiexec.exe -ArgumentList "/i","`"$tsInstaller`"","/quiet","/norestart" -Wait
+          Remove-Item $tsInstaller -Force
 
-      - name: Establish Tailscale Connection
+      # =========================================================
+      # 12. CONECTAR TAILSCALE
+      # =========================================================
+      - name: Connect Tailscale
         run: |
-          & "$env:ProgramFiles\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=gh-runner-$env:GITHUB_RUN_ID
-          
-          $tsIP = $null
-          $retries = 0
+          & "$env:ProgramFiles\Tailscale\tailscale.exe" up `
+              --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} `
+              --hostname=gh-runner-$env:GITHUB_RUN_ID
+          $tsIP = $null; $retries = 0
           while (-not $tsIP -and $retries -lt 10) {
-              $tsIP = & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4
-              Start-Sleep -Seconds 5
-              $retries++
+            $tsIP = & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4
+            Start-Sleep -Seconds 5; $retries++
           }
-          
-          if (-not $tsIP) {
-              Write-Error "Tailscale IP not assigned. Exiting."
-              exit 1
-          }
+          if (-not $tsIP) { Write-Error "Tailscale IP no asignada"; exit 1 }
           echo "TAILSCALE_IP=$tsIP" >> $env:GITHUB_ENV
-      
-      - name: Verify RDP Accessibility
-        run: |
-          Write-Host "Tailscale IP: $env:TAILSCALE_IP"
-          
-          $testResult = Test-NetConnection -ComputerName $env:TAILSCALE_IP -Port 3389
-          if (-not $testResult.TcpTestSucceeded) {
-              Write-Error "TCP connection to RDP port 3389 failed"
-              exit 1
-          }
-          Write-Host "TCP connectivity successful!"
 
+      # =========================================================
+      # 13. VERIFICAR RDP
+      # =========================================================
+      - name: Verify RDP
+        run: |
+          $test = Test-NetConnection -ComputerName $env:TAILSCALE_IP -Port 3389
+          if (-not $test.TcpTestSucceeded) { Write-Error "RDP no accesible"; exit 1 }
+          Write-Host "✅ RDP accesible en $env:TAILSCALE_IP:3389"
+
+      # =========================================================
+      # 14. MANTENER SESION ACTIVA
+      # =========================================================
       - name: Maintain Connection
         run: |
-          Write-Host "`n=== RDP ACCESS ==="
-          Write-Host "Address: $env:TAILSCALE_IP"
-          Write-Host "Username: RDP"
-          Write-Host "==================`n"
-          
+          Write-Host "`n========================================="
+          Write-Host "  RDP LISTO"
+          Write-Host "  IP:       $env:TAILSCALE_IP"
+          Write-Host "  Usuario:  RDP"
+          Write-Host "  Scripts:  C:\scripts\"
+          Write-Host "    - video_converter.py  (gradio>=4, huggingface_hub)"
+          Write-Host "    - hls_dash_converter.py (gradio>=5, requests, psutil)"
+          Write-Host "  FFmpeg:   C:\ffmpeg\"
+          Write-Host "  Brave:    instalado"
+          Write-Host "=========================================`n"
           while ($true) {
-              Write-Host "[$(Get-Date)] RDP Active - Use Ctrl+C in workflow to terminate"
-              Start-Sleep -Seconds 300
+            $disk = [math]::Round((Get-PSDrive C).Free/1GB, 2)
+            $ram  = [math]::Round((Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory/1MB, 2)
+            Write-Host "[$(Get-Date -Format 'HH:mm:ss')] Activo | Disco libre: $disk GB | RAM libre: $ram GB"
+            Start-Sleep -Seconds 300
           }
