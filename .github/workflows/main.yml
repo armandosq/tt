@@ -1,35 +1,32 @@
 name: RDP
+
 on:
   workflow_dispatch:
     inputs:
       rdp_password:
-        description: 'Contrasena para el usuario RDP'
+        description: 'Contraseña para el usuario RDP'
         required: true
         type: string
 
 jobs:
-  secure-rdp:
+  rdp:
     runs-on: windows-latest
-    timeout-minutes: 3600
+    timeout-minutes: 350
 
     steps:
 
-      # =======================================================
+      # ─────────────────────────────────────────
       # 1. LIBERAR ESPACIO EN DISCO
-      # =======================================================
+      # ─────────────────────────────────────────
       - name: Free Disk Space
         shell: pwsh
         run: |
-          Write-Host "=== Disco ANTES ==="
-          Get-PSDrive C | ForEach-Object { Write-Host "Libre: $([math]::Round($_.Free/1GB,2)) GB" }
-          $del = @(
+          $paths = @(
             "C:\hostedtoolcache\windows\go",
             "C:\hostedtoolcache\windows\node",
             "C:\hostedtoolcache\windows\PyPy",
             "C:\hostedtoolcache\windows\Ruby",
-            "C:\hostedtoolcache\windows\boost",
-            "C:\Program Files\dotnet\sdk",
-            "C:\Program Files\dotnet\shared",
+            "C:\Program Files\dotnet",
             "C:\Program Files (x86)\Microsoft Visual Studio",
             "C:\Program Files\Microsoft Visual Studio",
             "C:\Program Files (x86)\Android",
@@ -41,63 +38,41 @@ jobs:
             "C:\Program Files\Amazon",
             "C:\Program Files\Google\Chrome",
             "C:\Program Files\Mozilla Firefox",
-            "C:\Program Files (x86)\Microsoft SDKs",
-            "C:\Program Files\Microsoft SDKs",
             "C:\Program Files (x86)\Windows Kits",
             "C:\Program Files\LLVM",
             "C:\ProgramData\chocolatey\lib",
-            "C:\ProgramData\chocolatey\bin",
             "C:\tools\php",
-            "C:\tools\Ruby31-x64",
             "C:\Strawberry"
           )
-          foreach ($p in $del) {
+          foreach ($p in $paths) {
             if (Test-Path $p) {
               Remove-Item $p -Recurse -Force -ErrorAction SilentlyContinue
-              Write-Host "Eliminado: $p"
             }
           }
           Stop-Service wuauserv -Force -ErrorAction SilentlyContinue
           Remove-Item "C:\Windows\SoftwareDistribution\Download\*" -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item "$env:TEMP\*"            -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item "C:\Windows\Temp\*"    -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item "C:\Windows\Logs\*"    -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item "C:\Windows\Prefetch\*" -Recurse -Force -ErrorAction SilentlyContinue
-          Write-Host "=== Disco DESPUES ==="
-          Get-PSDrive C | ForEach-Object { Write-Host "Libre: $([math]::Round($_.Free/1GB,2)) GB" }
+          Remove-Item "$env:TEMP\*"             -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item "C:\Windows\Temp\*"       -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item "C:\Windows\Prefetch\*"   -Recurse -Force -ErrorAction SilentlyContinue
+          $free = [math]::Round((Get-PSDrive C).Free / 1GB, 2)
+          Write-Host "Disco libre: $free GB"
 
-      # =======================================================
+      # ─────────────────────────────────────────
       # 2. INSTALAR BRAVE
-      # =======================================================
+      # ─────────────────────────────────────────
       - name: Install Brave Browser
         shell: pwsh
         run: |
-          $url = "https://referrals.brave.com/latest/BraveBrowserSetup-BRV010.exe"
+          $url  = "https://referrals.brave.com/latest/BraveBrowserSetup-BRV010.exe"
           $inst = "$env:TEMP\brave.exe"
           Invoke-WebRequest -Uri $url -OutFile $inst -UseBasicParsing
-          Start-Process $inst -ArgumentList "/silent","/install" -Wait
+          Start-Process $inst -ArgumentList "/silent", "/install" -Wait
           Remove-Item $inst -Force -ErrorAction SilentlyContinue
           Write-Host "Brave instalado"
 
-      # =======================================================
-      # 3. INSTALAR PYTHON 3.11
-      # =======================================================
-      - name: Install Python 3.11
-        shell: pwsh
-        run: |
-          $url = "https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe"
-          $inst = "$env:TEMP\python.exe"
-          Invoke-WebRequest -Uri $url -OutFile $inst -UseBasicParsing
-          Start-Process $inst -ArgumentList "/quiet","InstallAllUsers=1","PrependPath=1","Include_pip=1" -Wait
-          Remove-Item $inst -Force -ErrorAction SilentlyContinue
-          $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH","User")
-          python --version
-          pip --version
-          Write-Host "Python instalado"
-
-      # =======================================================
-      # 4. INSTALAR FFMPEG
-      # =======================================================
+      # ─────────────────────────────────────────
+      # 3. INSTALAR FFMPEG
+      # ─────────────────────────────────────────
       - name: Install FFmpeg
         shell: pwsh
         run: |
@@ -108,147 +83,107 @@ jobs:
           Expand-Archive -Path $zip -DestinationPath $dest -Force
           Remove-Item $zip -Force
           $inner = Get-ChildItem $dest -Directory | Select-Object -First 1
-          if ($inner) { Copy-Item "$($inner.FullName)\bin\*" "$dest\" -Force }
-          $cur = [System.Environment]::GetEnvironmentVariable("PATH","Machine")
-          [System.Environment]::SetEnvironmentVariable("PATH","$cur;$dest","Machine")
+          if ($inner) {
+            Copy-Item "$($inner.FullName)\bin\*" "$dest\" -Force
+            Remove-Item $inner.FullName -Recurse -Force
+          }
+          $cur = [System.Environment]::GetEnvironmentVariable("PATH", "Machine")
+          [System.Environment]::SetEnvironmentVariable("PATH", "$cur;$dest", "Machine")
           $env:PATH += ";$dest"
           ffmpeg -version | Select-Object -First 1
-          Write-Host "FFmpeg instalado"
+          Write-Host "FFmpeg instalado en C:\ffmpeg"
 
-      # =======================================================
-      # 5. INSTALAR DEPENDENCIAS SCRIPT 1
-      #    gradio>=4.0.0  cloudscraper  huggingface_hub
-      # =======================================================
-      - name: Install deps Script 1
-        shell: pwsh
-        run: |
-          $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH","User")
-          pip install --upgrade "gradio>=4.0.0" cloudscraper huggingface_hub
-          Write-Host "Deps Script 1 OK"
-
-      # =======================================================
-      # 6. INSTALAR DEPENDENCIAS SCRIPT 2
-      #    gradio>=5.0  requests  psutil
-      # =======================================================
-      - name: Install deps Script 2
-        shell: pwsh
-        run: |
-          $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH","User")
-          pip install --upgrade "gradio>=5.0" requests psutil
-          Write-Host "Deps Script 2 OK"
-
-      # =======================================================
-      # 7. ESCRIBIR SCRIPT 1 (base64 decode - sin here-string)
-      # =======================================================
-      - name: Write Script 1 - Video Converter Pro
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path "C:\scripts" | Out-Null
-          $b64 = "aW1wb3J0IHN5cwppbXBvcnQgb3MKaW1wb3J0IHN1YnByb2Nlc3MKaW1wb3J0IHJlCmltcG9ydCBqc29uCmltcG9ydCB0ZW1wZmlsZQppbXBvcnQgc2h1dGlsCmZyb20gcGF0aGxpYiBpbXBvcnQgUGF0aApmcm9tIHR5cGluZyBpbXBvcnQgT3B0aW9uYWwsIExpc3QsIFR1cGxlCgppbXBvcnQgZ3JhZGlvIGFzIGdyCmZyb20gaHVnZ2luZ2ZhY2VfaHViIGltcG9ydCBIZkFwaSwgbGlzdF9tb2RlbHMKCkNVU1RPTV9DU1MgPSAiIiIKYm9keSB7IGJhY2tncm91bmQtY29sb3I6ICMwZjBmMWE7IGNvbG9yOiAjZjhmYWZjOyB9Ci5ncmFkaW8tY29udGFpbmVyIHsgYmFja2dyb3VuZC1jb2xvcjogIzBmMGYxYSAhaW1wb3J0YW50OyB9CmZvb3RlciB7IGRpc3BsYXk6IG5vbmUgIWltcG9ydGFudDsgfQoiIiIKCmNsYXNzIEF1ZGlvVHJhY2s6CiAgICBkZWYgX19pbml0X18oc2VsZiwgaW5kZXgsIHN0cmVhbV9pbmRleCwgY29kZWMsIGxhbmd1YWdlLCBjaGFubmVscywgdGl0bGU9IiIpOgogICAgICAgIHNlbGYuaW5kZXggPSBpbmRleDsgc2VsZi5zdHJlYW1faW5kZXggPSBzdHJlYW1faW5kZXg7IHNlbGYuY29kZWMgPSBjb2RlYwogICAgICAgIHNlbGYubGFuZ3VhZ2UgPSBsYW5ndWFnZTsgc2VsZi5jaGFubmVscyA9IGNoYW5uZWxzOyBzZWxmLnRpdGxlID0gdGl0bGUKICAgIGRlZiBkaXNwbGF5X25hbWUoc2VsZik6CiAgICAgICAgbGFuZyA9IHNlbGYubGFuZ3VhZ2UgaWYgc2VsZi5sYW5ndWFnZSAhPSAidW5kIiBlbHNlICJVbmtub3duIgogICAgICAgIGNoID0gZiJ7c2VsZi5jaGFubmVsc31jaCIgaWYgc2VsZi5jaGFubmVscyBlbHNlICIiCiAgICAgICAgcmV0dXJuIGYiW3tzZWxmLmluZGV4fV0ge2xhbmd9IHwge3NlbGYuY29kZWN9IHtjaH0ge3NlbGYudGl0bGV9Ii5zdHJpcCgpCgpjbGFzcyBTdWJ0aXRsZVRyYWNrOgogICAgZGVmIF9faW5pdF9fKHNlbGYsIGluZGV4LCBzdHJlYW1faW5kZXgsIGNvZGVjLCBsYW5ndWFnZSwgdGl0bGU9IiIsIGZvcmNlZD1GYWxzZSk6CiAgICAgICAgc2VsZi5pbmRleCA9IGluZGV4OyBzZWxmLnN0cmVhbV9pbmRleCA9IHN0cmVhbV9pbmRleDsgc2VsZi5jb2RlYyA9IGNvZGVjCiAgICAgICAgc2VsZi5sYW5ndWFnZSA9IGxhbmd1YWdlOyBzZWxmLnRpdGxlID0gdGl0bGU7IHNlbGYuZm9yY2VkID0gZm9yY2VkCiAgICBkZWYgZGlzcGxheV9uYW1lKHNlbGYpOgogICAgICAgIGxhbmcgPSBzZWxmLmxhbmd1YWdlIGlmIHNlbGYubGFuZ3VhZ2UgIT0gInVuZCIgZWxzZSAiVW5rbm93biIKICAgICAgICByZXR1cm4gZiJbe3NlbGYuaW5kZXh9XSB7bGFuZ30gfCB7c2VsZi5jb2RlY317JyAoRm9yY2VkKScgaWYgc2VsZi5mb3JjZWQgZWxzZSAnJ30iCgpjbGFzcyBNZWRpYUluZm86CiAgICBkZWYgX19pbml0X18oc2VsZiwgcGF0aCk6CiAgICAgICAgc2VsZi5wYXRoID0gcGF0aDsgc2VsZi5hdWRpb190cmFja3MgPSBbXTsgc2VsZi5zdWJ0aXRsZV90cmFja3MgPSBbXQogICAgICAgIHNlbGYuZHVyYXRpb24gPSAwLjA7IHNlbGYudGl0bGUgPSBOb25lCgpjbGFzcyBNZWRpYUFuYWx5emVyOgogICAgQHN0YXRpY21ldGhvZAogICAgZGVmIGdldF9tZWRpYV9pbmZvKHNvdXJjZSk6CiAgICAgICAgaW5mbyA9IE1lZGlhSW5mbyhwYXRoPXNvdXJjZSkKICAgICAgICB0cnk6CiAgICAgICAgICAgIGNtZCA9IFsiZmZwcm9iZSIsICItdiIsICJxdWlldCIsICItcHJpbnRfZm9ybWF0IiwgImpzb24iLCAiLXNob3dfZm9ybWF0IiwgIi1zaG93X3N0cmVhbXMiLCBzb3VyY2VdCiAgICAgICAgICAgIHJlc3VsdCA9IHN1YnByb2Nlc3MucnVuKGNtZCwgY2FwdHVyZV9vdXRwdXQ9VHJ1ZSwgdGV4dD1UcnVlLCB0aW1lb3V0PTYwKQogICAgICAgICAgICBpZiByZXN1bHQucmV0dXJuY29kZSAhPSAwOiByZXR1cm4gaW5mbwogICAgICAgICAgICBkYXRhID0ganNvbi5sb2FkcyhyZXN1bHQuc3Rkb3V0KQogICAgICAgICAgICBmb3JtYXRfdGFncyA9IGRhdGEuZ2V0KCJmb3JtYXQiLCB7fSkuZ2V0KCJ0YWdzIiwge30pCiAgICAgICAgICAgIGluZm8udGl0bGUgPSBmb3JtYXRfdGFncy5nZXQoInRpdGxlIikgb3IgZm9ybWF0X3RhZ3MuZ2V0KCJUSVRMRSIpCiAgICAgICAgICAgIGlmIGluZm8udGl0bGU6IGluZm8udGl0bGUgPSBpbmZvLnRpdGxlLnN0cmlwKCkKICAgICAgICAgICAgaWYgImZvcm1hdCIgaW4gZGF0YSBhbmQgImR1cmF0aW9uIiBpbiBkYXRhWyJmb3JtYXQiXToKICAgICAgICAgICAgICAgIGluZm8uZHVyYXRpb24gPSBmbG9hdChkYXRhWyJmb3JtYXQiXVsiZHVyYXRpb24iXSkKICAgICAgICAgICAgYXVkaW9faWR4LCBzdWJfaWR4ID0gMCwgMAogICAgICAgICAgICBmb3Igc3RyZWFtIGluIGRhdGEuZ2V0KCJzdHJlYW1zIiwgW10pOgogICAgICAgICAgICAgICAgY29kZWNfdHlwZSA9IHN0cmVhbS5nZXQoImNvZGVjX3R5cGUiLCAiIikKICAgICAgICAgICAgICAgIHRhZ3MgPSBzdHJlYW0uZ2V0KCJ0YWdzIiwge30pCiAgICAgICAgICAgICAgICBpZiBjb2RlY190eXBlID09ICJhdWRpbyI6CiAgICAgICAgICAgICAgICAgICAgdCA9IEF1ZGlvVHJhY2soYXVkaW9faWR4LCBzdHJlYW0uZ2V0KCJpbmRleCIsMCksIHN0cmVhbS5nZXQoImNvZGVjX25hbWUiLCJ1bmtub3duIiksCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgdGFncy5nZXQoImxhbmd1YWdlIiwidW5kIiksIHN0cmVhbS5nZXQoImNoYW5uZWxzIiwyKSwgdGFncy5nZXQoInRpdGxlIiwiIikpCiAgICAgICAgICAgICAgICAgICAgaW5mby5hdWRpb190cmFja3MuYXBwZW5kKHQpOyBhdWRpb19pZHggKz0gMQogICAgICAgICAgICAgICAgZWxpZiBjb2RlY190eXBlID09ICJzdWJ0aXRsZSI6CiAgICAgICAgICAgICAgICAgICAgZCA9IHN0cmVhbS5nZXQoImRpc3Bvc2l0aW9uIiwge30pCiAgICAgICAgICAgICAgICAgICAgdCA9IFN1YnRpdGxlVHJhY2soc3ViX2lkeCwgc3RyZWFtLmdldCgiaW5kZXgiLDApLCBzdHJlYW0uZ2V0KCJjb2RlY19uYW1lIiwidW5rbm93biIpLAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIHRhZ3MuZ2V0KCJsYW5ndWFnZSIsInVuZCIpLCB0YWdzLmdldCgidGl0bGUiLCIiKSwgZC5nZXQoImZvcmNlZCIsMCk9PTEpCiAgICAgICAgICAgICAgICAgICAgaW5mby5zdWJ0aXRsZV90cmFja3MuYXBwZW5kKHQpOyBzdWJfaWR4ICs9IDEKICAgICAgICBleGNlcHQgRXhjZXB0aW9uIGFzIGU6CiAgICAgICAgICAgIHByaW50KGYiRXJyb3I6IHtlfSIpCiAgICAgICAgcmV0dXJuIGluZm8KCmNsYXNzIFZpZGVvQ29udmVydGVyOgogICAgZGVmIF9faW5pdF9fKHNlbGYpOgogICAgICAgIHNlbGYuY3VycmVudF9wcm9jZXNzID0gTm9uZTsgc2VsZi5jYW5jZWxsZWQgPSBGYWxzZQogICAgZGVmIGNhbmNlbChzZWxmKToKICAgICAgICBzZWxmLmNhbmNlbGxlZCA9IFRydWUKICAgICAgICBpZiBzZWxmLmN1cnJlbnRfcHJvY2VzczoKICAgICAgICAgICAgdHJ5OiBzZWxmLmN1cnJlbnRfcHJvY2Vzcy50ZXJtaW5hdGUoKQogICAgICAgICAgICBleGNlcHQ6IHBhc3MKICAgIGRlZiBydW5fZmZtcGVnKHNlbGYsIGNtZCwgZHVyYXRpb24sIHByb2dyZXNzPU5vbmUsIG1zZz0iIik6CiAgICAgICAgdHJ5OgogICAgICAgICAgICBzZWxmLmN1cnJlbnRfcHJvY2VzcyA9IHN1YnByb2Nlc3MuUG9wZW4oY21kLCBzdGRvdXQ9c3VicHJvY2Vzcy5QSVBFLCBzdGRlcnI9c3VicHJvY2Vzcy5QSVBFLCB1bml2ZXJzYWxfbmV3bGluZXM9VHJ1ZSkKICAgICAgICAgICAgcGF0dGVybiA9IHJlLmNvbXBpbGUociJ0aW1lPShcZHsyfSk6KFxkezJ9KTooXGR7Mn0pXC4oXGR7Mn0pIikKICAgICAgICAgICAgZm9yIGxpbmUgaW4gc2VsZi5jdXJyZW50X3Byb2Nlc3Muc3RkZXJyOgogICAgICAgICAgICAgICAgaWYgc2VsZi5jYW5jZWxsZWQ6IHJldHVybiBGYWxzZSwgIkNhbmNlbGFkbyIKICAgICAgICAgICAgICAgIG0gPSBwYXR0ZXJuLnNlYXJjaChsaW5lKQogICAgICAgICAgICAgICAgaWYgbSBhbmQgZHVyYXRpb24gPiAwOgogICAgICAgICAgICAgICAgICAgIGgsbWkscyxtcyA9IG1hcChpbnQsIG0uZ3JvdXBzKCkpCiAgICAgICAgICAgICAgICAgICAgcGN0ID0gbWluKDEwMCwgKGgqMzYwMCttaSo2MCtzK21zLzEwMCkvZHVyYXRpb24qMTAwKQogICAgICAgICAgICAgICAgICAgIGlmIHByb2dyZXNzOiBwcm9ncmVzcyhwY3QvMTAwLCBkZXNjPWYie21zZ306IHtwY3Q6LjBmfSUiKQogICAgICAgICAgICBzZWxmLmN1cnJlbnRfcHJvY2Vzcy53YWl0KCkKICAgICAgICAgICAgcmV0dXJuIHNlbGYuY3VycmVudF9wcm9jZXNzLnJldHVybmNvZGUgPT0gMCwgIk9LIgogICAgICAgIGV4Y2VwdCBFeGNlcHRpb24gYXMgZToKICAgICAgICAgICAgcmV0dXJuIEZhbHNlLCBzdHIoZSkKICAgIGRlZiBjb252ZXJ0KHNlbGYsIHNvdXJjZSwgaXNfdXJsLCBtb2RlLCBvdXRwdXRfZGlyLCBzZWxlY3RlZF9hdWRpbywgZ2VuZXJhdGVfc2luZ2xlLAogICAgICAgICAgICAgICAgZXh0cmFjdF9zdWIsIHN1Yl9pbmRleCwgcHJvZ3Jlc3M9Tm9uZSwgbG9nX2Z1bmM9cHJpbnQpOgogICAgICAgIHNlbGYuY2FuY2VsbGVkID0gRmFsc2UKICAgICAgICB0cnk6CiAgICAgICAgICAgIGV4dHJhID0gWyItdXNlcl9hZ2VudCIsIk1vemlsbGEvNS4wIiwiLWhlYWRlcnMiLCJSZWZlcmVyOiBodHRwczovL2dvb2dsZS5jb21cclxuIl0gaWYgaXNfdXJsIGVsc2UgW10KICAgICAgICAgICAgaW5mbyA9IE1lZGlhQW5hbHl6ZXIuZ2V0X21lZGlhX2luZm8oc291cmNlKQogICAgICAgICAgICBkdXJhdGlvbiA9IGluZm8uZHVyYXRpb24gaWYgaW5mby5kdXJhdGlvbiA+IDAgZWxzZSAxCiAgICAgICAgICAgIGJhc2VfbmFtZSA9IGluZm8udGl0bGUgaWYgaW5mby50aXRsZSBlbHNlIFBhdGgoc291cmNlKS5zdGVtCiAgICAgICAgICAgIGlmIG5vdCBiYXNlX25hbWUgb3Igbm90IGJhc2VfbmFtZS5zdHJpcCgpOiBiYXNlX25hbWUgPSAidmlkZW9fc2luX25vbWJyZSIKICAgICAgICAgICAgZm9sZGVyX25hbWUgPSByZS5zdWIocidbPD46Ii9cXHw/Kl0nLCAnXycsIGJhc2VfbmFtZSkKICAgICAgICAgICAgZm9sZGVyX25hbWUgPSByZS5zdWIocidccysnLCAnICcsIGZvbGRlcl9uYW1lKS5zdHJpcCgpLnJlcGxhY2UoJyAnLCAnXycpCiAgICAgICAgICAgIGZvciBvLCBuIGluIFsoImEiLCI0IiksKCJBIiwiNCIpLCgiaSIsIjEiKSwoIkkiLCIxIiksKCJvIiwiMCIpLCgiTyIsIjAiKV06CiAgICAgICAgICAgICAgICBmb2xkZXJfbmFtZSA9IGZvbGRlcl9uYW1lLnJlcGxhY2UobywgbikKICAgICAgICAgICAgZm9sZGVyX25hbWUgPSBmb2xkZXJfbmFtZVs6MTUwXQogICAgICAgICAgICB0ZW1wX2ZvbGRlciA9IHRlbXBmaWxlLm1rZHRlbXAocHJlZml4PSJ2aWRlb19jb252XyIpCiAgICAgICAgICAgIG91dF9mb2xkZXIgPSBvcy5wYXRoLmpvaW4odGVtcF9mb2xkZXIsIGZvbGRlcl9uYW1lKQogICAgICAgICAgICBvcy5tYWtlZGlycyhvdXRfZm9sZGVyLCBleGlzdF9vaz1UcnVlKQogICAgICAgICAgICBsb2dfZnVuYyhmIkNhcnBldGE6IHtmb2xkZXJfbmFtZX0iKQogICAgICAgICAgICBhbGxfYXVkaW9fcGF0aCA9IG9zLnBhdGguam9pbihvdXRfZm9sZGVyLCBmIntmb2xkZXJfbmFtZX1fYWxsX2F1ZGlvLm1wNCIpCiAgICAgICAgICAgIGlmIG1vZGUgPT0gIlZpZGVvIEgyNjQgMTA4MHAgKyBBdWRpbyBNUDMiOgogICAgICAgICAgICAgICAgY21kID0gWyJmZm1wZWciLCAiLXkiXSArIGV4dHJhICsgWyItaSIsIHNvdXJjZSwgIi1tYXAiLCAiMDp2OjAiXQogICAgICAgICAgICAgICAgZm9yIGkgaW4gcmFuZ2UobGVuKGluZm8uYXVkaW9fdHJhY2tzKSk6IGNtZC5leHRlbmQoWyItbWFwIiwgZiIwOmE6e2l9Il0pCiAgICAgICAgICAgICAgICBjbWQuZXh0ZW5kKFsiLWM6diIsImxpYngyNjQiLCItdmYiLCJzY2FsZT0tMjoxMDgwIiwiLXByZXNldCIsInNsb3ciLCItY3JmIiwiMTgiXSkKICAgICAgICAgICAgICAgIGZvciBpIGluIHJhbmdlKGxlbihpbmZvLmF1ZGlvX3RyYWNrcykpOgogICAgICAgICAgICAgICAgICAgIGNtZC5leHRlbmQoW2YiLWM6YTp7aX0iLCJsaWJtcDNsYW1lIixmIi1iOmE6e2l9IiwiMzIwayIsZiItYXI6YTp7aX0iLCI0ODAwMCJdKQogICAgICAgICAgICBlbHNlOgogICAgICAgICAgICAgICAgY21kID0gWyJmZm1wZWciLCAiLXkiXSArIGV4dHJhICsgWyItaSIsIHNvdXJjZSwgIi1tYXAiLCAiMDp2OjAiXQogICAgICAgICAgICAgICAgZm9yIGkgaW4gcmFuZ2UobGVuKGluZm8uYXVkaW9fdHJhY2tzKSk6IGNtZC5leHRlbmQoWyItbWFwIiwgZiIwOmE6e2l9Il0pCiAgICAgICAgICAgICAgICBjbWQuZXh0ZW5kKFsiLWM6diIsImNvcHkiXSkKICAgICAgICAgICAgICAgIGlmIG1vZGUgPT0gIlZpZGVvIENvcHkgKyBBdWRpbyBNUDMiOgogICAgICAgICAgICAgICAgICAgIGZvciBpIGluIHJhbmdlKGxlbihpbmZvLmF1ZGlvX3RyYWNrcykpOgogICAgICAgICAgICAgICAgICAgICAgICBjbWQuZXh0ZW5kKFtmIi1jOmE6e2l9IiwibGlibXAzbGFtZSIsZiItYjphOntpfSIsIjMyMGsiLGYiLWFyOmE6e2l9IiwiNDgwMDAiXSkKICAgICAgICAgICAgICAgIGVsc2U6CiAgICAgICAgICAgICAgICAgICAgZm9yIGkgaW4gcmFuZ2UobGVuKGluZm8uYXVkaW9fdHJhY2tzKSk6CiAgICAgICAgICAgICAgICAgICAgICAgIGNtZC5leHRlbmQoW2YiLWM6YTp7aX0iLCJmbGFjIixmIi1jb21wcmVzc2lvbl9sZXZlbDphOntpfSIsIjAiXSkKICAgICAgICAgICAgY21kLmV4dGVuZChbIi1tYXBfbWV0YWRhdGEiLCIwIiwiLW1ldGFkYXRhIiwiY29weXJpZ2h0PVBvd2VyIFByb2RzIiwgYWxsX2F1ZGlvX3BhdGhdKQogICAgICAgICAgICBvaywgbXNnX3IgPSBzZWxmLnJ1bl9mZm1wZWcoY21kLCBkdXJhdGlvbiwgcHJvZ3Jlc3MsICJSZW5kZXJpemFkbyIpCiAgICAgICAgICAgIGlmIG5vdCBvayBvciBzZWxmLmNhbmNlbGxlZDogcmV0dXJuIEZhbHNlLCBmIkVycm9yOiB7bXNnX3J9IiwgTm9uZQogICAgICAgICAgICBpZiBnZW5lcmF0ZV9zaW5nbGUgYW5kIHNlbGVjdGVkX2F1ZGlvIDwgbGVuKGluZm8uYXVkaW9fdHJhY2tzKToKICAgICAgICAgICAgICAgIHNwID0gb3MucGF0aC5qb2luKG91dF9mb2xkZXIsIGYie2ZvbGRlcl9uYW1lfV9hdWRpb197c2VsZWN0ZWRfYXVkaW99Lm1wNCIpCiAgICAgICAgICAgICAgICBzYyA9IFsiZmZtcGVnIiwiLXkiLCItaSIsYWxsX2F1ZGlvX3BhdGgsIi1tYXAiLCIwOnY6MCIsIi1tYXAiLGYiMDphOntzZWxlY3RlZF9hdWRpb30iLCItYyIsImNvcHkiLCItbWFwX21ldGFkYXRhIiwiMCIsc3BdCiAgICAgICAgICAgICAgICBzZWxmLnJ1bl9mZm1wZWcoc2MsIGR1cmF0aW9uLCBwcm9ncmVzcywgIkV4dHJhY2Npb24iKQogICAgICAgICAgICBpZiBleHRyYWN0X3N1YiBhbmQgaW5mby5zdWJ0aXRsZV90cmFja3MgYW5kIHN1Yl9pbmRleCA8IGxlbihpbmZvLnN1YnRpdGxlX3RyYWNrcyk6CiAgICAgICAgICAgICAgICB2cCA9IG9zLnBhdGguam9pbihvdXRfZm9sZGVyLCBmIntmb2xkZXJfbmFtZX1fc3ViX3tzdWJfaW5kZXh9LnZ0dCIpCiAgICAgICAgICAgICAgICBzYyA9IFsiZmZtcGVnIiwiLXkiXStleHRyYStbIi1pIixzb3VyY2UsIi1tYXAiLGYiMDpzOntzdWJfaW5kZXh9IiwiLWM6cyIsIndlYnZ0dCIsdnBdCiAgICAgICAgICAgICAgICB0cnk6IHN1YnByb2Nlc3MucnVuKHNjLCBjYXB0dXJlX291dHB1dD1UcnVlLCBjaGVjaz1UcnVlLCB0aW1lb3V0PTEyMCkKICAgICAgICAgICAgICAgIGV4Y2VwdCBFeGNlcHRpb24gYXMgZTogbG9nX2Z1bmMoZiJFcnJvciBzdWI6IHtlfSIpCiAgICAgICAgICAgIHJldHVybiBUcnVlLCAiT0siLCBvdXRfZm9sZGVyCiAgICAgICAgZXhjZXB0IEV4Y2VwdGlvbiBhcyBlOgogICAgICAgICAgICBpbXBvcnQgdHJhY2ViYWNrOyB0cmFjZWJhY2sucHJpbnRfZXhjKCkKICAgICAgICAgICAgcmV0dXJuIEZhbHNlLCBzdHIoZSksIE5vbmUKCmRlZiBnZXRfdXNlcl9tb2RlbHModG9rZW4pOgogICAgaWYgbm90IHRva2VuOiByZXR1cm4gZ3IudXBkYXRlKGNob2ljZXM9W10sIGludGVyYWN0aXZlPVRydWUpCiAgICB0cnk6CiAgICAgICAgYXBpID0gSGZBcGkodG9rZW49dG9rZW4pCiAgICAgICAgdW5hbWUgPSBhcGkud2hvYW1pKHRva2VuPXRva2VuKVsibmFtZSJdCiAgICAgICAgY2hvaWNlcyA9IFttLm1vZGVsSWQgZm9yIG0gaW4gbGlzdChsaXN0X21vZGVscyh0b2tlbj10b2tlbiwgYXV0aG9yPXVuYW1lLCBsaW1pdD0xMDApKV0KICAgICAgICByZXR1cm4gZ3IudXBkYXRlKGNob2ljZXM9Y2hvaWNlcywgdmFsdWU9Y2hvaWNlc1swXSBpZiBjaG9pY2VzIGVsc2UgTm9uZSwgaW50ZXJhY3RpdmU9VHJ1ZSkKICAgIGV4Y2VwdDogcmV0dXJuIGdyLnVwZGF0ZShjaG9pY2VzPVtdLCBpbnRlcmFjdGl2ZT1UcnVlKQoKZGVmIHVwbG9hZF90b19oZihmb2xkZXJfcGF0aCwgcmVwb19pZCwgdG9rZW4sIGxvZ19mdW5jPXByaW50KToKICAgIHRyeToKICAgICAgICBhcGkgPSBIZkFwaSh0b2tlbj10b2tlbikKICAgICAgICBycCA9IGYidmlkZW9zL3tvcy5wYXRoLmJhc2VuYW1lKGZvbGRlcl9wYXRoKX0iCiAgICAgICAgYXBpLnVwbG9hZF9mb2xkZXIoZm9sZGVyX3BhdGg9Zm9sZGVyX3BhdGgsIHJlcG9faWQ9cmVwb19pZCwgcmVwb190eXBlPSJtb2RlbCIsIHBhdGhfaW5fcmVwbz1ycCkKICAgICAgICByZXR1cm4gVHJ1ZSwgZiJTdWJpZG8gYSB7cmVwb19pZH0ve3JwfSIKICAgIGV4Y2VwdCBFeGNlcHRpb24gYXMgZTogcmV0dXJuIEZhbHNlLCBzdHIoZSkKCmNvbnZlcnRlciA9IFZpZGVvQ29udmVydGVyKCkKCmRlZiBhbmFseXplX21lZGlhKGZpbGVfaW5wdXQsIHVybF9pbnB1dCk6CiAgICBzb3VyY2UgPSBmaWxlX2lucHV0Lm5hbWUgaWYgZmlsZV9pbnB1dCBlbHNlICh1cmxfaW5wdXQgaWYgdXJsX2lucHV0IGVsc2UgTm9uZSkKICAgIGlmIG5vdCBzb3VyY2U6IHJldHVybiBOb25lLCBOb25lLCAiU2luIGZ1ZW50ZS4iCiAgICBpbmZvID0gTWVkaWFBbmFseXplci5nZXRfbWVkaWFfaW5mbyhzb3VyY2UpCiAgICBhYyA9IFtmIntpfToge3QuZGlzcGxheV9uYW1lKCl9IiBmb3IgaSx0IGluIGVudW1lcmF0ZShpbmZvLmF1ZGlvX3RyYWNrcyldCiAgICBzYyA9IFtmIntpfToge3QuZGlzcGxheV9uYW1lKCl9IiBmb3IgaSx0IGluIGVudW1lcmF0ZShpbmZvLnN1YnRpdGxlX3RyYWNrcyldCiAgICB0eHQgPSBmIkFuYWxpemFkbzoge2luZm8udGl0bGUgb3Igb3MucGF0aC5iYXNlbmFtZShzb3VyY2UpfVxuRHVyYWNpb246IHtpbmZvLmR1cmF0aW9uOi4xZn1zXG5BdWRpb3M6IHtsZW4oaW5mby5hdWRpb190cmFja3MpfSB8IFN1YnM6IHtsZW4oaW5mby5zdWJ0aXRsZV90cmFja3MpfSIKICAgIHJldHVybiAoZ3IudXBkYXRlKGNob2ljZXM9YWMsdmFsdWU9YWNbMF0gaWYgYWMgZWxzZSBOb25lLGludGVyYWN0aXZlPVRydWUpLAogICAgICAgICAgICBnci51cGRhdGUoY2hvaWNlcz1zYyx2YWx1ZT1zY1swXSBpZiBzYyBlbHNlIE5vbmUsaW50ZXJhY3RpdmU9VHJ1ZSksIHR4dCkKCmRlZiBwcm9jZXNzX2FuZF91cGxvYWQoZmlsZV9pbnB1dCwgdXJsX2lucHV0LCB0b2tlbiwgdGFyZ2V0X21vZGVsLCBtb2RlLAogICAgICAgICAgICAgICAgICAgICAgIGF1ZGlvX2lkeF9zdHIsIHN1Yl9pZHhfc3RyLCBnZW5lcmF0ZV9zaW5nbGUsIGV4dHJhY3Rfc3ViLCBwcm9ncmVzcz1nci5Qcm9ncmVzcygpKToKICAgIHNvdXJjZSA9IGZpbGVfaW5wdXQubmFtZSBpZiBmaWxlX2lucHV0IGVsc2UgKHVybF9pbnB1dCBpZiB1cmxfaW5wdXQgZWxzZSBOb25lKQogICAgaWYgbm90IHNvdXJjZTogcmV0dXJuICJTaW4gZnVlbnRlLiIsICJFcnJvciIKICAgIGlzX3VybCA9IGJvb2wodXJsX2lucHV0IGFuZCBzb3VyY2UgPT0gdXJsX2lucHV0KQogICAgdHJ5OgogICAgICAgIGFpID0gaW50KGF1ZGlvX2lkeF9zdHIuc3BsaXQoIjoiKVswXSkgaWYgYXVkaW9faWR4X3N0ciBhbmQgIjoiIGluIGF1ZGlvX2lkeF9zdHIgZWxzZSAwCiAgICAgICAgc2kgPSBpbnQoc3ViX2lkeF9zdHIuc3BsaXQoIjoiKVswXSkgICBpZiBzdWJfaWR4X3N0ciAgIGFuZCAiOiIgaW4gc3ViX2lkeF9zdHIgICBlbHNlIDAKICAgIGV4Y2VwdDogcmV0dXJuICJQaXN0YXMgaW52YWxpZGFzLiIsICJFcnJvciIKICAgIGlmIG5vdCB0YXJnZXRfbW9kZWw6IHJldHVybiAiU2VsZWNjaW9uYSByZXBvLiIsICJFcnJvciIKICAgIGxvZ3MgPSBbXQogICAgZGVmIGxvZyhtKTogbG9ncy5hcHBlbmQobSkKICAgIG9rLCBtc2csIG91dF9mb2xkZXIgPSBjb252ZXJ0ZXIuY29udmVydChzb3VyY2UsaXNfdXJsLG1vZGUsIiIsYWksZ2VuZXJhdGVfc2luZ2xlLGV4dHJhY3Rfc3ViLHNpLHByb2dyZXNzPXByb2dyZXNzLGxvZ19mdW5jPWxvZykKICAgIGlmIG5vdCBvazogcmV0dXJuICJcbiIuam9pbihsb2dzKStmIlxue21zZ30iLCAiRmFsbG8iCiAgICB1b2ssIHVtc2cgPSB1cGxvYWRfdG9faGYob3V0X2ZvbGRlciwgdGFyZ2V0X21vZGVsLCB0b2tlbiwgbG9nKQogICAgaWYgb3V0X2ZvbGRlciBhbmQgb3MucGF0aC5leGlzdHMob3V0X2ZvbGRlcik6CiAgICAgICAgdHJ5OiBzaHV0aWwucm10cmVlKG9zLnBhdGguZGlybmFtZShvdXRfZm9sZGVyKSkKICAgICAgICBleGNlcHQ6IHBhc3MKICAgIHJldHVybiAiXG4iLmpvaW4obG9ncykrZiJcbnt1bXNnfSIsICJMaXN0byIgaWYgdW9rIGVsc2UgIkFkdmVydGVuY2lhcyIKCndpdGggZ3IuQmxvY2tzKHRoZW1lPWdyLnRoZW1lcy5Tb2Z0KCksIGNzcz1DVVNUT01fQ1NTKSBhcyBkZW1vOgogICAgZ3IuTWFya2Rvd24oIiMgVmlkZW8gQ29udmVydGVyIFBybyB2Mi4wIikKICAgIHdpdGggZ3IuUm93KCk6CiAgICAgICAgd2l0aCBnci5Db2x1bW4oc2NhbGU9MSk6CiAgICAgICAgICAgIHRva2VuX2luICA9IGdyLlRleHRib3gobGFiZWw9IkhGIFRva2VuIiwgdmFsdWU9b3MuZ2V0ZW52KCJIRl9UT0tFTiIsIiIpLCB0eXBlPSJwYXNzd29yZCIpCiAgICAgICAgICAgIGJ0bl9sb2FkICA9IGdyLkJ1dHRvbigiQ2FyZ2FyIE1vZGVsb3MiLCBzaXplPSJzbSIpCiAgICAgICAgICAgIHRndF9tb2RlbCA9IGdyLkRyb3Bkb3duKGxhYmVsPSJSZXBvc2l0b3JpbyIsIGNob2ljZXM9W10sIGludGVyYWN0aXZlPUZhbHNlKQogICAgICAgICAgICBtb2RlX3IgICAgPSBnci5SYWRpbyhjaG9pY2VzPVsiVmlkZW8gQ29weSArIEF1ZGlvIE1QMyIsIlZpZGVvIENvcHkgKyBBdWRpbyBGTEFDIiwiVmlkZW8gSDI2NCAxMDgwcCArIEF1ZGlvIE1QMyJdLAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICB2YWx1ZT0iVmlkZW8gQ29weSArIEF1ZGlvIE1QMyIsIGxhYmVsPSJNb2RvIikKICAgICAgICAgICAgZ2VuX3NpbmdsZSA9IGdyLkNoZWNrYm94KGxhYmVsPSJBdWRpbyBpbmRpdmlkdWFsIiwgdmFsdWU9RmFsc2UpCiAgICAgICAgICAgIGV4dF9zdWIgICAgPSBnci5DaGVja2JveChsYWJlbD0iRXh0cmFlciBzdWJ0aXR1bG8iLCB2YWx1ZT1GYWxzZSkKICAgICAgICAgICAgYXVkaW9fZGQgICA9IGdyLkRyb3Bkb3duKGxhYmVsPSJQaXN0YSBBdWRpbyIsIGNob2ljZXM9W10pCiAgICAgICAgICAgIHN1Yl9kZCAgICAgPSBnci5Ecm9wZG93bihsYWJlbD0iUGlzdGEgU3ViIiwgY2hvaWNlcz1bXSkKICAgICAgICB3aXRoIGdyLkNvbHVtbihzY2FsZT0yKToKICAgICAgICAgICAgd2l0aCBnci5UYWIoIkFyY2hpdm8iKTogZmkgPSBnci5GaWxlKGxhYmVsPSJWaWRlbyIsIGZpbGVfdHlwZXM9WyJ2aWRlbyJdKQogICAgICAgICAgICB3aXRoIGdyLlRhYigiVVJMIik6ICAgICB1aSA9IGdyLlRleHRib3gobGFiZWw9IlVSTCIsIHBsYWNlaG9sZGVyPSJodHRwczovLy4uLiIpCiAgICAgICAgICAgIGJ0bl9hbiAgPSBnci5CdXR0b24oIkFuYWxpemFyIiwgdmFyaWFudD0ic2Vjb25kYXJ5IikKICAgICAgICAgICAgYW5faW5mbyA9IGdyLlRleHRib3gobGFiZWw9IkluZm8iLCBsaW5lcz0zLCBpbnRlcmFjdGl2ZT1GYWxzZSkKICAgICAgICAgICAgYnRuX3ByICA9IGdyLkJ1dHRvbigiUFJPQ0VTQVIgWSBTVUJJUiIsIHZhcmlhbnQ9InByaW1hcnkiLCBzaXplPSJsZyIpCiAgICAgICAgICAgIGxvZ19vdXQgPSBnci5UZXh0Ym94KGxhYmVsPSJMb2ciLCBsaW5lcz0xNSwgaW50ZXJhY3RpdmU9RmFsc2UpCiAgICBidG5fbG9hZC5jbGljayhmbj1nZXRfdXNlcl9tb2RlbHMsIGlucHV0cz1bdG9rZW5faW5dLCBvdXRwdXRzPVt0Z3RfbW9kZWxdKQogICAgYnRuX2FuLmNsaWNrKGZuPWFuYWx5emVfbWVkaWEsIGlucHV0cz1bZmksdWldLCBvdXRwdXRzPVthdWRpb19kZCxzdWJfZGQsYW5faW5mb10pCiAgICBidG5fcHIuY2xpY2soZm49cHJvY2Vzc19hbmRfdXBsb2FkLCBpbnB1dHM9W2ZpLHVpLHRva2VuX2luLHRndF9tb2RlbCxtb2RlX3IsYXVkaW9fZGQsc3ViX2RkLGdlbl9zaW5nbGUsZXh0X3N1Yl0sCiAgICAgICAgICAgICAgICAgb3V0cHV0cz1bbG9nX291dCxhbl9pbmZvXSkKCmlmIF9fbmFtZV9fID09ICJfX21haW5fXyI6CiAgICBkZW1vLmxhdW5jaCgpCg=="
-          $bytes = [System.Convert]::FromBase64String($b64)
-          [System.IO.File]::WriteAllBytes("C:\scripts\video_converter.py", $bytes)
-          Write-Host "Script 1 escrito: $(Get-Item 'C:\scripts\video_converter.py').Length bytes"
-
-      # =======================================================
-      # 8. ESCRIBIR SCRIPT 2 (base64 decode - sin here-string)
-      # =======================================================
-      - name: Write Script 2 - HLS DASH Converter EXTREME
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path "C:\scripts" | Out-Null
-          $b64 = "aW1wb3J0IGdyYWRpbyBhcyBncgppbXBvcnQgc3VicHJvY2VzcwppbXBvcnQgb3MKaW1wb3J0IGpzb24KaW1wb3J0IHJlCmltcG9ydCBzaHV0aWwKZnJvbSBwYXRobGliIGltcG9ydCBQYXRoCmZyb20gY29uY3VycmVudC5mdXR1cmVzIGltcG9ydCBUaHJlYWRQb29sRXhlY3V0b3IsIGFzX2NvbXBsZXRlZAppbXBvcnQgdGVtcGZpbGUKaW1wb3J0IHJlcXVlc3RzCmltcG9ydCBwc3V0aWwKCmRlZiBzZXR1cF9yYW1kaXNrKCk6CiAgICB0cnk6CiAgICAgICAgcCA9IFBhdGgoIi9kZXYvc2htL3ZpZGVvX3Byb2Nlc3NpbmciKTsgcC5ta2RpcihleGlzdF9vaz1UcnVlLCBwYXJlbnRzPVRydWUpOyByZXR1cm4gcAogICAgZXhjZXB0OgogICAgICAgIHAgPSBQYXRoKHRlbXBmaWxlLmdldHRlbXBkaXIoKSkgLyAidmlkZW9fcHJvY2Vzc2luZyI7IHAubWtkaXIoZXhpc3Rfb2s9VHJ1ZSk7IHJldHVybiBwCgpkZWYgZ2V0X29wdGltYWxfdGhyZWFkcygpOgogICAgdHJ5OiByZXR1cm4gbWF4KGxlbihvcy5zY2hlZF9nZXRhZmZpbml0eSgwKSkgLSAxLCAxKQogICAgZXhjZXB0OiByZXR1cm4gbWF4KChvcy5jcHVfY291bnQoKSBvciA0KSAtIDEsIDEpCgpSQU1ESVNLX1BBVEggICAgPSBzZXR1cF9yYW1kaXNrKCkKT1BUSU1BTF9USFJFQURTID0gZ2V0X29wdGltYWxfdGhyZWFkcygpCnByaW50KGYiQ1BVOntPUFRJTUFMX1RIUkVBRFN9IHwgUkFNOntSQU1ESVNLX1BBVEh9IikKCmZvciBnYyBpbiBbWyJnaXQiLCJjb25maWciLCItLWdsb2JhbCIsInVzZXIuZW1haWwiLCJhY3Rpb25zQGdpdGh1Yi5jb20iXSwKICAgICAgICAgICBbImdpdCIsImNvbmZpZyIsIi0tZ2xvYmFsIiwidXNlci5uYW1lIiwiR0ggU3BhY2UiXSwKICAgICAgICAgICBbImdpdCIsImNvbmZpZyIsIi0tZ2xvYmFsIiwiY29yZS5jb21wcmVzc2lvbiIsIjAiXSwKICAgICAgICAgICBbImdpdCIsImNvbmZpZyIsIi0tZ2xvYmFsIiwicGFjay50aHJlYWRzIixzdHIoT1BUSU1BTF9USFJFQURTKV1dOgogICAgc3VicHJvY2Vzcy5ydW4oZ2MsIGNoZWNrPUZhbHNlLCBzdGRvdXQ9c3VicHJvY2Vzcy5ERVZOVUxMLCBzdGRlcnI9c3VicHJvY2Vzcy5ERVZOVUxMKQoKZGVmIGlzX2xpdmVfc3RyZWFtKHNyYyk6CiAgICBpZiBub3Qgc3JjLnN0YXJ0c3dpdGgoKCJodHRwOi8vIiwiaHR0cHM6Ly8iKSk6IHJldHVybiBGYWxzZQogICAgaWYgYW55KHNyYy5sb3dlcigpLmVuZHN3aXRoKGUpIGZvciBlIGluIFsiLm1wNCIsIi5ta3YiLCIuYXZpIiwiLm1vdiIsIi53bXYiLCIuZmx2IiwiLndlYm0iLCIudHMiXSk6IHJldHVybiBGYWxzZQogICAgcmV0dXJuIGFueShwIGluIHNyYy5sb3dlcigpIGZvciBwIGluIFsiL2xpdmUvIiwiL3N0cmVhbS8iLCIubTN1OCIsIi5tcGQiLCIvaGxzLyIsIi9kYXNoLyJdKQoKZGVmIGdldF9pbnB1dF9hcmdzKHNyYyk6CiAgICB1YSA9ICJNb3ppbGxhLzUuMCAoV2luZG93cyBOVCAxMC4wOyBXaW42NDsgeDY0KSBBcHBsZVdlYktpdC81MzcuMzYiCiAgICBpZiBub3Qgc3JjLnN0YXJ0c3dpdGgoKCJodHRwOi8vIiwiaHR0cHM6Ly8iKSk6CiAgICAgICAgcmV0dXJuIFsiLWFuYWx5emVkdXJhdGlvbiIsIjEwMDAwMDAwMCIsIi1wcm9iZXNpemUiLCIxMDAwMDAwMDAiLCItZmZsYWdzIiwiK2dlbnB0cytpZ25kdHMiXQogICAgaWYgaXNfbGl2ZV9zdHJlYW0oc3JjKToKICAgICAgICByZXR1cm4gWyItdXNlcl9hZ2VudCIsdWEsIi10aW1lb3V0IiwiMTAwMDAwMDAiLCItcmVjb25uZWN0IiwiMSIsIi1yZWNvbm5lY3Rfc3RyZWFtZWQiLCIxIiwKICAgICAgICAgICAgICAgICItcmVjb25uZWN0X2RlbGF5X21heCIsIjUiLCItZmZsYWdzIiwiK2Zhc3RzZWVrK2dlbnB0cyIsIi1wcm9iZXNpemUiLCI1ME0iLCItYW5hbHl6ZWR1cmF0aW9uIiwiMjBNIl0KICAgIHJldHVybiBbIi11c2VyX2FnZW50Iix1YSwiLXRpbWVvdXQiLCIzMDAwMDAwMCIsIi1yZWNvbm5lY3QiLCIxIiwiLXJlY29ubmVjdF9zdHJlYW1lZCIsIjEiLAogICAgICAgICAgICAiLXJlY29ubmVjdF9kZWxheV9tYXgiLCI1IiwiLWFuYWx5emVkdXJhdGlvbiIsIjIwMDAwMDAwMCIsIi1wcm9iZXNpemUiLCIyMDAwMDAwMDAiLAogICAgICAgICAgICAiLWZmbGFncyIsIitnZW5wdHMraWduZHRzIiwiLWVycl9kZXRlY3QiLCJpZ25vcmVfZXJyIiwiLW1heF9kZWxheSIsIjUwMDAwMDAiLCItcndfdGltZW91dCIsIjMwMDAwMDAwIl0KCmRlZiBnZXRfY29weV9hcmdzKCk6CiAgICByZXR1cm4gWyItbWF4X211eGluZ19xdWV1ZV9zaXplIiwiOTk5OSIsIi1hdm9pZF9uZWdhdGl2ZV90cyIsIm1ha2VfemVybyIsCiAgICAgICAgICAgICItZmZsYWdzIiwiK2dlbnB0cytpZ25kdHMrZmx1c2hfcGFja2V0cyIsIi1jb3B5dGIiLCIxIiwiLXN0YXJ0X2F0X3plcm8iLAogICAgICAgICAgICAiLXRocmVhZHMiLHN0cihPUFRJTUFMX1RIUkVBRFMpLCItdGhyZWFkX3F1ZXVlX3NpemUiLCI0MDk2Il0KCmRlZiBnZXRfcmVuZGVyX2FyZ3MoKToKICAgIHJldHVybiBbIi10aHJlYWRzIixzdHIoT1BUSU1BTF9USFJFQURTKSwiLXRocmVhZF90eXBlIiwic2xpY2UrZnJhbWUiLAogICAgICAgICAgICAiLXNsaWNlcyIsc3RyKE9QVElNQUxfVEhSRUFEUyksIi1tYXhfbXV4aW5nX3F1ZXVlX3NpemUiLCI5OTk5IiwiLXRocmVhZF9xdWV1ZV9zaXplIiwiNDA5NiJdCgpkZWYgY2xlYW5fZm9sZGVyKG4pOiByZXR1cm4gcmUuc3ViKHInWzw+OiIvXFx8PypdJywnXycsbikuc3RyaXAoKVs6MjAwXQpkZWYgY2xlYW5fcmVwbyhuKToKICAgIG4gPSByZS5zdWIocidbXmEtekEtWjAtOV8tXScsJy0nLG4pCiAgICByZXR1cm4gcmUuc3ViKHInLSsnLCctJyxuKS5zdHJpcCgnLScpWzoxMDBdCgpkZWYgYnVpbGRfbmFtZShjdHlwZSwgbW5hbWUsIHNuYW1lLCBzZWFzb24sIGVwX3N0YXJ0LCBlcF9pZHgpOgogICAgaWYgY3R5cGUgPT0gIlBlbGljdWxhIjoKICAgICAgICBiID0gbW5hbWUuc3RyaXAoKSBvciAiUGVsaWN1bGEiOyByZXR1cm4gY2xlYW5fZm9sZGVyKGIpLCBjbGVhbl9yZXBvKGIpCiAgICBuID0gc25hbWUuc3RyaXAoKSBvciAiU2VyaWUiCiAgICB0cnk6IHQgPSBpbnQoc2Vhc29uKQogICAgZXhjZXB0OiB0ID0gMQogICAgdHJ5OiBlcCA9IGludChlcF9zdGFydCkgKyBlcF9pZHgKICAgIGV4Y2VwdDogZXAgPSBlcF9pZHggKyAxCiAgICBsYmwgPSBmIntufV9Ue3R9X0Vwe2VwfSI7IHJldHVybiBjbGVhbl9mb2xkZXIobGJsKSwgY2xlYW5fcmVwbyhsYmwpCgpkZWYgZGV0ZWN0X2R1cmF0aW9uKHNyYywgaWFyZ3MpOgogICAgY21kID0gWyJmZnByb2JlIiwiLXYiLCJlcnJvciJdICsgaWFyZ3MgKyBbIi1zaG93X2VudHJpZXMiLCJmb3JtYXQ9ZHVyYXRpb24iLCItb2YiLCJqc29uIiwiLWkiLHNyY10KICAgIHRyeToKICAgICAgICByID0gc3VicHJvY2Vzcy5ydW4oY21kLCBjYXB0dXJlX291dHB1dD1UcnVlLCB0ZXh0PVRydWUsIHRpbWVvdXQ9MTIwKQogICAgICAgIGQgPSBqc29uLmxvYWRzKHIuc3Rkb3V0KS5nZXQoImZvcm1hdCIse30pLmdldCgiZHVyYXRpb24iKQogICAgICAgIHJldHVybiBmbG9hdChkKSBpZiBkIGFuZCBkICE9ICJOL0EiIGVsc2UgTm9uZQogICAgZXhjZXB0OiByZXR1cm4gTm9uZQoKZGVmIGRldGVjdF9hdWRpbyhzcmMsIGlhcmdzKToKICAgIGNtZCA9IFsiZmZwcm9iZSIsIi12IiwiZXJyb3IiXSArIGlhcmdzICsgWyItc2VsZWN0X3N0cmVhbXMiLCJhIiwKICAgICAgICAgICAiLXNob3dfZW50cmllcyIsInN0cmVhbT1pbmRleCxjb2RlY19uYW1lOnN0cmVhbV90YWdzPWxhbmd1YWdlLHRpdGxlIiwiLW9mIiwianNvbiIsIi1pIixzcmNdCiAgICB0cnk6CiAgICAgICAgciA9IHN1YnByb2Nlc3MucnVuKGNtZCwgY2FwdHVyZV9vdXRwdXQ9VHJ1ZSwgdGV4dD1UcnVlLCB0aW1lb3V0PTEyMCkKICAgICAgICByZXR1cm4gW3siaW5kZXgiOnMuZ2V0KCJpbmRleCIsMCksImxhbmd1YWdlIjpzLmdldCgidGFncyIse30pLmdldCgibGFuZ3VhZ2UiLCJ1bmQiKSwKICAgICAgICAgICAgICAgICAidGl0bGUiOnMuZ2V0KCJ0YWdzIix7fSkuZ2V0KCJ0aXRsZSIsZiJBdWRpbyB7cy5nZXQoJ2luZGV4JywwKX0iKSwiY29kZWMiOnMuZ2V0KCJjb2RlY19uYW1lIiwidW5rIil9CiAgICAgICAgICAgICAgICBmb3IgcyBpbiBqc29uLmxvYWRzKHIuc3Rkb3V0KS5nZXQoInN0cmVhbXMiLFtdKV0KICAgIGV4Y2VwdDogcmV0dXJuIFtdCgpkZWYgcHJpb3JpdGl6ZSh0cmFja3MpOgogICAgcHJpID0gWyJzcGEiLCJlcyIsInNwYW5pc2giLCJlc3Bhbm9sIiwibGF0aW5vIiwibGF0IiwiZXMtbXgiLCJlcy00MTkiXQogICAgZGVmIGtleSh0KToKICAgICAgICBsPXRbImxhbmd1YWdlIl0ubG93ZXIoKTsgdGk9dFsidGl0bGUiXS5sb3dlcigpCiAgICAgICAgZm9yIHAgaW4gcHJpOgogICAgICAgICAgICBpZiBwIGluIGwgb3IgcCBpbiB0aTogcmV0dXJuIDAKICAgICAgICByZXR1cm4gMSBpZiBsPT0idW5kIiBlbHNlIDIKICAgIHJldHVybiBzb3J0ZWQodHJhY2tzLCBrZXk9a2V5KQoKZGVmIGNyZWF0ZV9tYXN0ZXIob3V0ZGlyLCB2c3RyZWFtcywgYXBsYXlsaXN0cyk6CiAgICBjID0gIiNFWFRNM1VcbiNFWFQtWC1WRVJTSU9OOjdcblxuIgogICAgZm9yIGFwIGluIGFwbGF5bGlzdHM6CiAgICAgICAgZCA9ICJZRVMiIGlmIGFwWyJpc19kZWZhdWx0Il0gZWxzZSAiTk8iCiAgICAgICAgYyArPSBmJyNFWFQtWC1NRURJQTpUWVBFPUFVRElPLEdST1VQLUlEPSJhdWRpbyIsTkFNRT0ie2FwWyJ0aXRsZSJdfSIsTEFOR1VBR0U9InthcFsibGFuZ3VhZ2UiXX0iLERFRkFVTFQ9e2R9LEFVVE9TRUxFQ1Q9e2R9LFVSST0ie2FwWyJmaWxlIl19IlxuJwogICAgYyArPSAiXG4iCiAgICBmb3IgdiBpbiB2c3RyZWFtczoKICAgICAgICBjICs9IGYnI0VYVC1YLVNUUkVBTS1JTkY6QkFORFdJRFRIPXt2WyJiYW5kd2lkdGgiXX0sUkVTT0xVVElPTj17dlsicmVzb2x1dGlvbiJdfSxDT0RFQ1M9Int2WyJjb2RlY3MiXX0iLEFVRElPPSJhdWRpbyJcbnt2WyJmaWxlIl19XG4nCiAgICAob3V0ZGlyIC8gIm1hc3Rlci5tM3U4Iikud3JpdGVfdGV4dChjKQoKZGVmIHByb2Nlc3NfYXVkaW8oYXJncyk6CiAgICB0cmFjaywgaSwgdG90YWwsIHNyYywgb3V0ZGlyLCBfLCBpYXJncyA9IGFyZ3MKICAgIHRkID0gUkFNRElTS19QQVRIIC8gZiJhdWRfe29zLmdldHBpZCgpfV97aX0iCiAgICB0cnk6CiAgICAgICAgdGQubWtkaXIoZXhpc3Rfb2s9VHJ1ZSkKICAgICAgICBhZiA9IHRkIC8gZiJhdWRpb197aX0ubTN1OCI7IHNlZyA9IHRkIC8gZiJhdWRpb197aX1fJTAzZC50cyIKICAgICAgICBjbWQgPSAoWyJmZm1wZWciLCItaGlkZV9iYW5uZXIiLCItdGhyZWFkcyIsc3RyKE9QVElNQUxfVEhSRUFEUyldICsgaWFyZ3MKICAgICAgICAgICAgICAgKyBbIi1pIixzcmMsIi1tYXAiLGYiMDp7dHJhY2tbJ2luZGV4J119IiwKICAgICAgICAgICAgICAgICAgIi1jOmEiLCJsaWJtcDNsYW1lIiwiLWI6YSIsIjE5MmsiLCItYXIiLCI0ODAwMCIsIi1hYyIsIjIiLAogICAgICAgICAgICAgICAgICAiLXRocmVhZHMiLHN0cihPUFRJTUFMX1RIUkVBRFMpLCItbWF4X211eGluZ19xdWV1ZV9zaXplIiwiOTk5OSIsIi10aHJlYWRfcXVldWVfc2l6ZSIsIjQwOTYiLAogICAgICAgICAgICAgICAgICAiLWhsc190aW1lIiwiNSIsIi1obHNfbGlzdF9zaXplIiwiMCIsIi1obHNfc2VnbWVudF9maWxlbmFtZSIsc3RyKHNlZyksCiAgICAgICAgICAgICAgICAgICItaGxzX2ZsYWdzIiwiaW5kZXBlbmRlbnRfc2VnbWVudHMrYXBwZW5kX2xpc3QrdGVtcF9maWxlIiwKICAgICAgICAgICAgICAgICAgIi1obHNfcGxheWxpc3RfdHlwZSIsInZvZCIsIi1obHNfc2VnbWVudF90eXBlIiwibXBlZ3RzIiwKICAgICAgICAgICAgICAgICAgc3RyKGFmKSwiLXkiLCItbG9nbGV2ZWwiLCJ3YXJuaW5nIl0pCiAgICAgICAgciA9IHN1YnByb2Nlc3MucnVuKGNtZCwgY2FwdHVyZV9vdXRwdXQ9VHJ1ZSwgdGV4dD1UcnVlLCB0aW1lb3V0PTcyMDApCiAgICAgICAgaWYgci5yZXR1cm5jb2RlICE9IDAgb3Igbm90IGFmLmV4aXN0cygpOgogICAgICAgICAgICByZXR1cm4geyJzdWNjZXNzIjpGYWxzZSwiaW5kZXgiOmksImVycm9yIjpyLnN0ZGVyclstMjAwOl0sInRyYWNrIjp0cmFja30KICAgICAgICB0cyA9IGxpc3QodGQuZ2xvYihmImF1ZGlvX3tpfV8qLnRzIikpCiAgICAgICAgaWYgbm90IHRzOiByZXR1cm4geyJzdWNjZXNzIjpGYWxzZSwiaW5kZXgiOmksImVycm9yIjoiTm8gVFMiLCJ0cmFjayI6dHJhY2t9CiAgICAgICAgc2h1dGlsLm1vdmUoc3RyKGFmKSwgc3RyKG91dGRpci9mImF1ZGlvX3tpfS5tM3U4IikpCiAgICAgICAgZm9yIHQyIGluIHRzOiBzaHV0aWwubW92ZShzdHIodDIpLCBzdHIob3V0ZGlyL3QyLm5hbWUpKQogICAgICAgIHJldHVybiB7InN1Y2Nlc3MiOlRydWUsImluZGV4IjppLCJ0cmFjayI6dHJhY2ssInNlZ21lbnRzX2NvdW50IjpsZW4odHMpLAogICAgICAgICAgICAgICAgInBsYXlsaXN0Ijp7ImZpbGUiOmYiYXVkaW9fe2l9Lm0zdTgiLCJsYW5ndWFnZSI6dHJhY2tbImxhbmd1YWdlIl0sCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgInRpdGxlIjp0cmFja1sidGl0bGUiXSwiaXNfZGVmYXVsdCI6aT09MH19CiAgICBleGNlcHQgRXhjZXB0aW9uIGFzIGU6CiAgICAgICAgcmV0dXJuIHsic3VjY2VzcyI6RmFsc2UsImluZGV4IjppLCJlcnJvciI6c3RyKGUpLCJ0cmFjayI6dHJhY2t9CiAgICBmaW5hbGx5OgogICAgICAgIHNodXRpbC5ybXRyZWUodGQsIGlnbm9yZV9lcnJvcnM9VHJ1ZSkKCmRlZiBwcm9jZXNzX2J1bGsodG9rZW4sIGlucHV0X2ZpbGUsIGlucHV0X3VybHMsIGNvbnZfb3B0LCBzdHJlYW1fZm10LAogICAgICAgICAgICAgICAgIGJhdGNoX3N6LCBkZWxfbG9jYWwsIG1heF93a3JzLCBjdHlwZSwgbW5hbWUsIHNuYW1lLCBzZWFzb24sIGVwX3N0YXJ0LAogICAgICAgICAgICAgICAgIHByb2dyZXNzPWdyLlByb2dyZXNzKCkpOgogICAgbG9ncyA9IFtmIkVYVFJFTUUgfCBDUFU6e09QVElNQUxfVEhSRUFEU30gfCBSQU06e1JBTURJU0tfUEFUSH0iXQogICAgdHJ5OgogICAgICAgIGlmIG5vdCB0b2tlbjogcmFpc2UgRXhjZXB0aW9uKCJUb2tlbiBHaXRIdWIgcmVxdWVyaWRvLiIpCiAgICAgICAgc291cmNlcyA9IFtdCiAgICAgICAgZmxpc3QgPSBpbnB1dF9maWxlIGlmIGlzaW5zdGFuY2UoaW5wdXRfZmlsZSwgbGlzdCkgZWxzZSAoW2lucHV0X2ZpbGVdIGlmIGlucHV0X2ZpbGUgZWxzZSBbXSkKICAgICAgICBmb3IgZiBpbiBmbGlzdDogc291cmNlcy5hcHBlbmQoeyJ0eXBlIjoiZmlsZSIsInZhbHVlIjpmLm5hbWV9KQogICAgICAgIGlmIGlucHV0X3VybHM6CiAgICAgICAgICAgIGZvciBsaW5lIGluIGlucHV0X3VybHMuc3BsaXQoIlxuIik6CiAgICAgICAgICAgICAgICB1ID0gbGluZS5zdHJpcCgpCiAgICAgICAgICAgICAgICBpZiB1OiBzb3VyY2VzLmFwcGVuZCh7InR5cGUiOiJ1cmwiLCJ2YWx1ZSI6dX0pCiAgICAgICAgaWYgbm90IHNvdXJjZXM6IHJhaXNlIEV4Y2VwdGlvbigiU2luIGZ1ZW50ZXMuIikKICAgICAgICBmaW5hbF9saW5rcyA9IFtdCiAgICAgICAgZm9yIGlkeCwgc291cmNlIGluIGVudW1lcmF0ZShzb3VyY2VzKToKICAgICAgICAgICAgc3JjID0gc291cmNlWyJ2YWx1ZSJdCiAgICAgICAgICAgIGZuYW1lLCBybmFtZSA9IGJ1aWxkX25hbWUoY3R5cGUsIG1uYW1lLCBzbmFtZSwgc2Vhc29uLCBlcF9zdGFydCwgaWR4KQogICAgICAgICAgICBsb2dzLmFwcGVuZChmIlt7aWR4KzF9L3tsZW4oc291cmNlcyl9XSB7Zm5hbWV9Iik7IHlpZWxkICJcbiIuam9pbihsb2dzKSwgbG9ncywgIiIKICAgICAgICAgICAgaWFyZ3MgPSBnZXRfaW5wdXRfYXJncyhzcmMpCiAgICAgICAgICAgIGR1ciA9IGRldGVjdF9kdXJhdGlvbihzcmMsIGlhcmdzKQogICAgICAgICAgICBpZiBkdXI6CiAgICAgICAgICAgICAgICBoLG0scyA9IGludChkdXIvLzM2MDApLCBpbnQoKGR1ciUzNjAwKS8vNjApLCBpbnQoZHVyJTYwKQogICAgICAgICAgICAgICAgbG9ncy5hcHBlbmQoZiIgIER1cmFjaW9uOiB7aDowMmR9OnttOjAyZH06e3M6MDJkfSIpCiAgICAgICAgICAgIGJhc2VfZGlyID0gUGF0aChzcmMpLnBhcmVudCBpZiBzb3VyY2VbInR5cGUiXT09ImZpbGUiIGVsc2UgUGF0aC5jd2QoKQogICAgICAgICAgICBvdXRkaXIgPSBiYXNlX2RpciAvIGZuYW1lOyBvdXRkaXIubWtkaXIoZXhpc3Rfb2s9VHJ1ZSkKICAgICAgICAgICAgdHJhY2tzID0gZGV0ZWN0X2F1ZGlvKHNyYywgaWFyZ3MpIG9yIFt7ImluZGV4IjowLCJsYW5ndWFnZSI6InVuZCIsInRpdGxlIjoiQXVkaW8iLCJjb2RlYyI6InVuayJ9XQogICAgICAgICAgICB0cmFja3MgPSBwcmlvcml0aXplKHRyYWNrcykKICAgICAgICAgICAgbG9ncy5hcHBlbmQoZiIgIHtsZW4odHJhY2tzKX0gYXVkaW9zIik7IHlpZWxkICJcbiIuam9pbihsb2dzKSwgbG9ncywgIiIKICAgICAgICAgICAgbWFuaWZlc3QgPSAiIgogICAgICAgICAgICBpZiBzdHJlYW1fZm10ID09ICJITFMgKE0zVTgpIjoKICAgICAgICAgICAgICAgIGFhcmdzID0gWyh0LGksbGVuKHRyYWNrcyksc3JjLG91dGRpcixGYWxzZSxpYXJncykgZm9yIGksdCBpbiBlbnVtZXJhdGUodHJhY2tzKV0KICAgICAgICAgICAgICAgIGFwbGF5bGlzdHMgPSBbXQogICAgICAgICAgICAgICAgd2l0aCBUaHJlYWRQb29sRXhlY3V0b3IobWF4X3dvcmtlcnM9bWF4X3drcnMpIGFzIGV4ZToKICAgICAgICAgICAgICAgICAgICBmb3IgZnV0IGluIGFzX2NvbXBsZXRlZCh7ZXhlLnN1Ym1pdChwcm9jZXNzX2F1ZGlvLGEpOmEgZm9yIGEgaW4gYWFyZ3N9KToKICAgICAgICAgICAgICAgICAgICAgICAgcmVzID0gZnV0LnJlc3VsdCgpCiAgICAgICAgICAgICAgICAgICAgICAgIGlmIHJlc1sic3VjY2VzcyJdOgogICAgICAgICAgICAgICAgICAgICAgICAgICAgYXBsYXlsaXN0cy5hcHBlbmQocmVzWyJwbGF5bGlzdCJdKQogICAgICAgICAgICAgICAgICAgICAgICAgICAgbG9ncy5hcHBlbmQoZiIgIEF1ZGlvIHtyZXNbJ2luZGV4J10rMX0gT0sgKHtyZXMuZ2V0KCdzZWdtZW50c19jb3VudCcsMCl9IHNlZ3MpIikKICAgICAgICAgICAgICAgICAgICAgICAgZWxzZToKICAgICAgICAgICAgICAgICAgICAgICAgICAgIGxvZ3MuYXBwZW5kKGYiICBFcnJvciBBdWRpbyB7cmVzWydpbmRleCddKzF9OiB7cmVzLmdldCgnZXJyb3InLCc/JylbOjYwXX0iKQogICAgICAgICAgICAgICAgICAgICAgICB5aWVsZCAiXG4iLmpvaW4obG9ncyksIGxvZ3MsICIiCiAgICAgICAgICAgICAgICBhcGxheWxpc3RzLnNvcnQoa2V5PWxhbWJkYSB4OiBpbnQoeFsiZmlsZSJdLnNwbGl0KCJfIilbMV0uc3BsaXQoIi4iKVswXSkpCiAgICAgICAgICAgICAgICBpZiBub3QgYXBsYXlsaXN0czogcmFpc2UgRXhjZXB0aW9uKCJTaW4gYXVkaW8gcHJvY2VzYWRvIikKICAgICAgICAgICAgICAgIHZzdHJlYW1zID0gW10KICAgICAgICAgICAgICAgIGlmICJDb3B5IiBpbiBjb252X29wdDoKICAgICAgICAgICAgICAgICAgICB0ZCA9IFJBTURJU0tfUEFUSCAvIGYidnRfe2lkeH0iOyB0ZC5ta2RpcihleGlzdF9vaz1UcnVlKQogICAgICAgICAgICAgICAgICAgIHZmID0gdGQvInZpZGVvXzEwODBwLm0zdTgiOyB2cyA9IHRkLyJ2aWRlb18xMDgwcF8lMDNkLnRzIgogICAgICAgICAgICAgICAgICAgIGNtZCA9IChbImZmbXBlZyIsIi1oaWRlX2Jhbm5lciIsIi10aHJlYWRzIixzdHIoT1BUSU1BTF9USFJFQURTKV0gKyBpYXJncwogICAgICAgICAgICAgICAgICAgICAgICAgICArIFsiLWkiLHNyYywiLW1hcCIsIjA6djowIiwiLWM6diIsImNvcHkiLCItYW4iXSArIGdldF9jb3B5X2FyZ3MoKQogICAgICAgICAgICAgICAgICAgICAgICAgICArIFsiLWhsc190aW1lIiwiNSIsIi1obHNfbGlzdF9zaXplIiwiMCIsIi1obHNfc2VnbWVudF9maWxlbmFtZSIsc3RyKHZzKSwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIi1obHNfZmxhZ3MiLCJpbmRlcGVuZGVudF9zZWdtZW50cythcHBlbmRfbGlzdCt0ZW1wX2ZpbGUiLAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAiLWhsc19wbGF5bGlzdF90eXBlIiwidm9kIiwiLWhsc19zZWdtZW50X3R5cGUiLCJtcGVndHMiLHN0cih2ZiksIi15IiwiLWxvZ2xldmVsIiwiZXJyb3IiXSkKICAgICAgICAgICAgICAgICAgICByID0gc3VicHJvY2Vzcy5ydW4oY21kLCBjYXB0dXJlX291dHB1dD1UcnVlLCB0ZXh0PVRydWUsIHRpbWVvdXQ9NzIwMCkKICAgICAgICAgICAgICAgICAgICBpZiByLnJldHVybmNvZGUgIT0gMDogc2h1dGlsLnJtdHJlZSh0ZCxpZ25vcmVfZXJyb3JzPVRydWUpOyByYWlzZSBFeGNlcHRpb24oZiJDb3B5IGVycm9yOiB7ci5zdGRlcnJbLTIwMDpdfSIpCiAgICAgICAgICAgICAgICAgICAgZjEwODAgPSBvdXRkaXIvInZpZGVvXzEwODBwLm0zdTgiCiAgICAgICAgICAgICAgICAgICAgc2h1dGlsLm1vdmUoc3RyKHZmKSwgc3RyKGYxMDgwKSkKICAgICAgICAgICAgICAgICAgICBmb3IgdHMgaW4gdGQuZ2xvYigidmlkZW9fMTA4MHBfKi50cyIpOiBzaHV0aWwubW92ZShzdHIodHMpLCBzdHIob3V0ZGlyL3RzLm5hbWUpKQogICAgICAgICAgICAgICAgICAgIHNodXRpbC5ybXRyZWUodGQsIGlnbm9yZV9lcnJvcnM9VHJ1ZSkKICAgICAgICAgICAgICAgICAgICAob3V0ZGlyLyJ2aWRlb183MjBwLm0zdTgiKS53cml0ZV90ZXh0KGYxMDgwLnJlYWRfdGV4dCgpKQogICAgICAgICAgICAgICAgICAgIHZzdHJlYW1zID0gW3siZmlsZSI6InZpZGVvXzEwODBwLm0zdTgiLCJyZXNvbHV0aW9uIjoiMTkyMHgxMDgwIiwiYmFuZHdpZHRoIjo1MDAwMDAwLCJjb2RlY3MiOiJhdmMxLjY0MDAyOCJ9LAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIHsiZmlsZSI6InZpZGVvXzcyMHAubTN1OCIsInJlc29sdXRpb24iOiIxMjgweDcyMCIsImJhbmR3aWR0aCI6MzAwMDAwMCwiY29kZWNzIjoiYXZjMS42NDAwMjgifV0KICAgICAgICAgICAgICAgIGVsc2U6CiAgICAgICAgICAgICAgICAgICAgcmxpc3QgPSAoW3sibGFiZWwiOiI0SyIsInNjYWxlIjoic2NhbGU9LTI6MjE2MCIsImJyIjoiMTUwMDBrIiwiYnVmc2l6ZSI6IjMwMDAwayIsInJlcyI6IjM4NDB4MjE2MCJ9LAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgeyJsYWJlbCI6IjEwODBwIiwic2NhbGUiOiJzY2FsZT0tMjoxMDgwIiwiYnIiOiI1MDAwayIsImJ1ZnNpemUiOiIxMDAwMGsiLCJyZXMiOiIxOTIweDEwODAifSwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIHsibGFiZWwiOiI3MjBwIiwic2NhbGUiOiJzY2FsZT0tMjo3MjAiLCJiciI6IjI4MDBrIiwiYnVmc2l6ZSI6IjU2MDBrIiwicmVzIjoiMTI4MHg3MjAifV0KICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgaWYgIjRLIiBpbiBjb252X29wdCBlbHNlCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIFt7ImxhYmVsIjoiMTA4MHAiLCJzY2FsZSI6InNjYWxlPS0yOjEwODAiLCJiciI6IjUwMDBrIiwiYnVmc2l6ZSI6IjEwMDAwayIsInJlcyI6IjE5MjB4MTA4MCJ9LAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgeyJsYWJlbCI6IjcyMHAiLCJzY2FsZSI6InNjYWxlPS0yOjcyMCIsImJyIjoiMjgwMGsiLCJidWZzaXplIjoiNTYwMGsiLCJyZXMiOiIxMjgweDcyMCJ9XSkKICAgICAgICAgICAgICAgICAgICBmb3IgcmMgaW4gcmxpc3Q6CiAgICAgICAgICAgICAgICAgICAgICAgIHRkID0gUkFNRElTS19QQVRIL2Yicl97cmNbJ2xhYmVsJ119IjsgdGQubWtkaXIoZXhpc3Rfb2s9VHJ1ZSkKICAgICAgICAgICAgICAgICAgICAgICAgdmYgPSB0ZC9mInZpZGVvX3tyY1snbGFiZWwnXX0ubTN1OCI7IHZzX3NlZyA9IHRkL2YidmlkZW9fe3JjWydsYWJlbCddfV8lMDNkLnRzIgogICAgICAgICAgICAgICAgICAgICAgICBjbWQgPSAoWyJmZm1wZWciLCItaGlkZV9iYW5uZXIiLCItdGhyZWFkcyIsc3RyKE9QVElNQUxfVEhSRUFEUyldICsgaWFyZ3MKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICsgWyItaSIsc3JjLCItbWFwIiwiMDp2OjAiLCItYW4iLCItYzp2IiwibGlieDI2NCIsIi1wcmVzZXQiLCJ1bHRyYWZhc3QiLCItY3JmIiwiMjMiLAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIi12ZiIscmNbInNjYWxlIl0sIi1iOnYiLHJjWyJiciJdLCItbWF4cmF0ZSIscmNbImJyIl0sIi1idWZzaXplIixyY1siYnVmc2l6ZSJdLCItcGl4X2ZtdCIsInl1djQyMHAiXQogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgKyBnZXRfcmVuZGVyX2FyZ3MoKQogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgKyBbIi1obHNfdGltZSIsIjUiLCItaGxzX2xpc3Rfc2l6ZSIsIjAiLCItaGxzX3NlZ21lbnRfZmlsZW5hbWUiLHN0cih2c19zZWcpLAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIi1obHNfZmxhZ3MiLCJpbmRlcGVuZGVudF9zZWdtZW50cythcHBlbmRfbGlzdCt0ZW1wX2ZpbGUiLAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIi1obHNfcGxheWxpc3RfdHlwZSIsInZvZCIsIi1obHNfc2VnbWVudF90eXBlIiwibXBlZ3RzIixzdHIodmYpLCIteSIsIi1sb2dsZXZlbCIsImVycm9yIl0pCiAgICAgICAgICAgICAgICAgICAgICAgIHIgPSBzdWJwcm9jZXNzLnJ1bihjbWQsIGNhcHR1cmVfb3V0cHV0PVRydWUsIHRleHQ9VHJ1ZSwgdGltZW91dD0xNDQwMCkKICAgICAgICAgICAgICAgICAgICAgICAgaWYgci5yZXR1cm5jb2RlICE9IDA6IHNodXRpbC5ybXRyZWUodGQsaWdub3JlX2Vycm9ycz1UcnVlKTsgY29udGludWUKICAgICAgICAgICAgICAgICAgICAgICAgZm0gPSBvdXRkaXIvZiJ2aWRlb197cmNbJ2xhYmVsJ119Lm0zdTgiCiAgICAgICAgICAgICAgICAgICAgICAgIHNodXRpbC5tb3ZlKHN0cih2ZiksIHN0cihmbSkpCiAgICAgICAgICAgICAgICAgICAgICAgIGZvciB0cyBpbiB0ZC5nbG9iKGYidmlkZW9fe3JjWydsYWJlbCddfV8qLnRzIik6IHNodXRpbC5tb3ZlKHN0cih0cyksIHN0cihvdXRkaXIvdHMubmFtZSkpCiAgICAgICAgICAgICAgICAgICAgICAgIHNodXRpbC5ybXRyZWUodGQsIGlnbm9yZV9lcnJvcnM9VHJ1ZSkKICAgICAgICAgICAgICAgICAgICAgICAgdnN0cmVhbXMuYXBwZW5kKHsiZmlsZSI6ZiJ2aWRlb197cmNbJ2xhYmVsJ119Lm0zdTgiLCJyZXNvbHV0aW9uIjpyY1sicmVzIl0sCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgImJhbmR3aWR0aCI6aW50KHJjWyJiciJdLnJlcGxhY2UoImsiLCIwMDAiKSkrMTkyMDAwLCJjb2RlY3MiOiJhdmMxLjY0MDAyOCJ9KQogICAgICAgICAgICAgICAgaWYgbm90IHZzdHJlYW1zOiByYWlzZSBFeGNlcHRpb24oIlNpbiB2aWRlbyIpCiAgICAgICAgICAgICAgICBjcmVhdGVfbWFzdGVyKG91dGRpciwgdnN0cmVhbXMsIGFwbGF5bGlzdHMpOyBtYW5pZmVzdCA9ICJtYXN0ZXIubTN1OCIKICAgICAgICAgICAgZWxpZiBzdHJlYW1fZm10ID09ICJEQVNIIChNUEQpIjoKICAgICAgICAgICAgICAgIHRkID0gUkFNRElTS19QQVRIL2YiZGFzaF97aWR4fSI7IHRkLm1rZGlyKGV4aXN0X29rPVRydWUpCiAgICAgICAgICAgICAgICB2YyA9ICJjb3B5IiBpZiAiQ29weSIgaW4gY29udl9vcHQgZWxzZSAibGlieDI2NCIKICAgICAgICAgICAgICAgIGNtZCA9IChbImZmbXBlZyIsIi1oaWRlX2Jhbm5lciIsIi10aHJlYWRzIixzdHIoT1BUSU1BTF9USFJFQURTKV0gKyBpYXJncwogICAgICAgICAgICAgICAgICAgICAgICsgWyItaSIsc3JjLCItbWFwIiwiMDp2OjAiLCItYzp2OjAiLHZjXSkKICAgICAgICAgICAgICAgIGlmIHZjICE9ICJjb3B5IjogY21kICs9IFsiLXByZXNldCIsInVsdHJhZmFzdCIsIi1jcmYiLCIyMyJdCiAgICAgICAgICAgICAgICBmb3IgaTIsdDIgaW4gZW51bWVyYXRlKHRyYWNrcyk6CiAgICAgICAgICAgICAgICAgICAgY21kICs9IFsiLW1hcCIsZiIwOnt0MlsnaW5kZXgnXX0iLGYiLWM6YTp7aTJ9IiwiYWFjIixmIi1iOmE6e2kyfSIsIjE5MmsiLAogICAgICAgICAgICAgICAgICAgICAgICAgICAgZiItYXI6YTp7aTJ9IiwiNDgwMDAiLGYiLWFjOmE6e2kyfSIsIjIiXQogICAgICAgICAgICAgICAgbXBkID0gdGQvIm1hbmlmZXN0Lm1wZCIKICAgICAgICAgICAgICAgIGNtZCArPSAoZ2V0X2NvcHlfYXJncygpIGlmIHZjPT0iY29weSIgZWxzZSBnZXRfcmVuZGVyX2FyZ3MoKSkKICAgICAgICAgICAgICAgIGNtZCArPSBbIi1mIiwiZGFzaCIsIi1zZWdfZHVyYXRpb24iLCI1IiwiLXVzZV90ZW1wbGF0ZSIsIjEiLCItdXNlX3RpbWVsaW5lIiwiMCIsCiAgICAgICAgICAgICAgICAgICAgICAgICItaW5pdF9zZWdfbmFtZSIsImluaXQtJFJlcHJlc2VudGF0aW9uSUQkLm00cyIsCiAgICAgICAgICAgICAgICAgICAgICAgICItbWVkaWFfc2VnX25hbWUiLCJjaHVuay0kUmVwcmVzZW50YXRpb25JRCQtJE51bWJlciUwNWQkLm00cyIsCiAgICAgICAgICAgICAgICAgICAgICAgIHN0cihtcGQpLCIteSIsIi1sb2dsZXZlbCIsImVycm9yIl0KICAgICAgICAgICAgICAgIHIgPSBzdWJwcm9jZXNzLnJ1bihjbWQsIGNhcHR1cmVfb3V0cHV0PVRydWUsIHRleHQ9VHJ1ZSwgdGltZW91dD0xNDQwMCkKICAgICAgICAgICAgICAgIGlmIHIucmV0dXJuY29kZSAhPSAwOiBzaHV0aWwucm10cmVlKHRkLGlnbm9yZV9lcnJvcnM9VHJ1ZSk7IHJhaXNlIEV4Y2VwdGlvbihmIkRBU0g6IHtyLnN0ZGVyclstMjAwOl19IikKICAgICAgICAgICAgICAgIHNodXRpbC5tb3ZlKHN0cihtcGQpLCBzdHIob3V0ZGlyLyJtYW5pZmVzdC5tcGQiKSkKICAgICAgICAgICAgICAgIGZvciBtNHMgaW4gdGQuZ2xvYigiKi5tNHMiKTogc2h1dGlsLm1vdmUoc3RyKG00cyksIHN0cihvdXRkaXIvbTRzLm5hbWUpKQogICAgICAgICAgICAgICAgc2h1dGlsLnJtdHJlZSh0ZCwgaWdub3JlX2Vycm9ycz1UcnVlKTsgbWFuaWZlc3QgPSAibWFuaWZlc3QubXBkIgogICAgICAgICAgICBoZHJzID0geyJBdXRob3JpemF0aW9uIjpmInRva2VuIHt0b2tlbn0ifQogICAgICAgICAgICByciA9IHJlcXVlc3RzLnBvc3QoImh0dHBzOi8vYXBpLmdpdGh1Yi5jb20vdXNlci9yZXBvcyIsIGhlYWRlcnM9aGRycywKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIGpzb249eyJuYW1lIjpybmFtZSwicHJpdmF0ZSI6VHJ1ZX0sIHRpbWVvdXQ9MzApCiAgICAgICAgICAgIGlmIHJyLnN0YXR1c19jb2RlID09IDQyMjoKICAgICAgICAgICAgICAgIHVuYW1lID0gcmVxdWVzdHMuZ2V0KCJodHRwczovL2FwaS5naXRodWIuY29tL3VzZXIiLGhlYWRlcnM9aGRycykuanNvbigpWyJsb2dpbiJdCiAgICAgICAgICAgICAgICBodG1sX3VybCA9IGYiaHR0cHM6Ly9naXRodWIuY29tL3t1bmFtZX0ve3JuYW1lfSIKICAgICAgICAgICAgZWxzZTogaHRtbF91cmwgPSByci5qc29uKClbImh0bWxfdXJsIl0KICAgICAgICAgICAgZ2l0X3VybCA9IGh0bWxfdXJsLnJlcGxhY2UoImh0dHBzOi8vIixmImh0dHBzOi8ve3Rva2VufUAiKSArICIuZ2l0IgogICAgICAgICAgICBnZCA9IHN0cihvdXRkaXIpCiAgICAgICAgICAgIGZvciBnYyBpbiBbWyJnaXQiLCJpbml0Il0sWyJnaXQiLCJjaGVja291dCIsIi1iIiwibWFpbiJdLFsiZ2l0IiwicmVtb3RlIiwiYWRkIiwib3JpZ2luIixnaXRfdXJsXSwKICAgICAgICAgICAgICAgICAgICAgICBbImdpdCIsImNvbmZpZyIsImh0dHAucG9zdEJ1ZmZlciIsIjUyNDI4ODAwMCJdLFsiZ2l0IiwiY29uZmlnIiwiY29yZS5jb21wcmVzc2lvbiIsIjAiXV06CiAgICAgICAgICAgICAgICBzdWJwcm9jZXNzLnJ1bihnYywgY3dkPWdkLCBjaGVjaz1UcnVlLCBzdGRvdXQ9c3VicHJvY2Vzcy5ERVZOVUxMLCBzdGRlcnI9c3VicHJvY2Vzcy5ERVZOVUxMKQogICAgICAgICAgICBmaWxlcyA9IG9zLmxpc3RkaXIoZ2QpCiAgICAgICAgICAgIGV4dF9zID0gIi5tNHMiIGlmIHN0cmVhbV9mbXQ9PSJEQVNIIChNUEQpIiBlbHNlICIudHMiCiAgICAgICAgICAgIGV4dF9tID0gIi5tcGQiIGlmIHN0cmVhbV9mbXQ9PSJEQVNIIChNUEQpIiBlbHNlICIubTN1OCIKICAgICAgICAgICAgc2VncyA9IFtmIGZvciBmIGluIGZpbGVzIGlmIGYuZW5kc3dpdGgoZXh0X3MpXQogICAgICAgICAgICBtYW5zID0gW2YgZm9yIGYgaW4gZmlsZXMgaWYgZi5lbmRzd2l0aChleHRfbSldCiAgICAgICAgICAgIHN1YnByb2Nlc3MucnVuKFsiZ2l0IiwiYWRkIl0rbWFucywgY3dkPWdkLCBjaGVjaz1UcnVlLCBzdGRvdXQ9c3VicHJvY2Vzcy5ERVZOVUxMLCBzdGRlcnI9c3VicHJvY2Vzcy5ERVZOVUxMKQogICAgICAgICAgICBzdWJwcm9jZXNzLnJ1bihbImdpdCIsImNvbW1pdCIsIi1tIixmIkFkZCB7Zm5hbWV9Il0sIGN3ZD1nZCwgY2hlY2s9VHJ1ZSwKICAgICAgICAgICAgICAgICAgICAgICAgICAgc3Rkb3V0PXN1YnByb2Nlc3MuREVWTlVMTCwgc3RkZXJyPXN1YnByb2Nlc3MuREVWTlVMTCkKICAgICAgICAgICAgZm9yIGF0dCBpbiByYW5nZSgzKToKICAgICAgICAgICAgICAgIHRyeToKICAgICAgICAgICAgICAgICAgICBzdWJwcm9jZXNzLnJ1bihbImdpdCIsInB1c2giLCItdSIsIm9yaWdpbiIsIm1haW4iXSxjd2Q9Z2QsY2hlY2s9VHJ1ZSwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBzdGRvdXQ9c3VicHJvY2Vzcy5ERVZOVUxMLHN0ZGVycj1zdWJwcm9jZXNzLlBJUEUsdGltZW91dD02MDApOyBicmVhawogICAgICAgICAgICAgICAgZXhjZXB0OgogICAgICAgICAgICAgICAgICAgIGlmIGF0dD09MjoKICAgICAgICAgICAgICAgICAgICAgICAgc3VicHJvY2Vzcy5ydW4oWyJnaXQiLCJwdXNoIiwiLWYiLCJvcmlnaW4iLCJtYWluIl0sY3dkPWdkLGNoZWNrPVRydWUsCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIHN0ZG91dD1zdWJwcm9jZXNzLkRFVk5VTEwsc3RkZXJyPXN1YnByb2Nlc3MuUElQRSx0aW1lb3V0PTYwMCkKICAgICAgICAgICAgYnMgPSBpbnQoYmF0Y2hfc3opCiAgICAgICAgICAgIGZvciBpMyBpbiByYW5nZSgwLCBsZW4oc2VncyksIGJzKToKICAgICAgICAgICAgICAgIGIgPSBzZWdzW2kzOmkzK2JzXQogICAgICAgICAgICAgICAgc3VicHJvY2Vzcy5ydW4oWyJnaXQiLCJhZGQiXStiLGN3ZD1nZCxjaGVjaz1UcnVlLHN0ZG91dD1zdWJwcm9jZXNzLkRFVk5VTEwsc3RkZXJyPXN1YnByb2Nlc3MuREVWTlVMTCkKICAgICAgICAgICAgICAgIHN1YnByb2Nlc3MucnVuKFsiZ2l0IiwiY29tbWl0IiwiLW0iLGYiQmF0Y2gge2kzfSJdLGN3ZD1nZCxjaGVjaz1UcnVlLAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgc3Rkb3V0PXN1YnByb2Nlc3MuREVWTlVMTCxzdGRlcnI9c3VicHJvY2Vzcy5ERVZOVUxMKQogICAgICAgICAgICAgICAgZm9yIGF0dCBpbiByYW5nZSgzKToKICAgICAgICAgICAgICAgICAgICB0cnk6CiAgICAgICAgICAgICAgICAgICAgICAgIHN1YnByb2Nlc3MucnVuKFsiZ2l0IiwicHVzaCIsIm9yaWdpbiIsIm1haW4iXSxjd2Q9Z2QsY2hlY2s9VHJ1ZSwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgc3Rkb3V0PXN1YnByb2Nlc3MuREVWTlVMTCxzdGRlcnI9c3VicHJvY2Vzcy5QSVBFLHRpbWVvdXQ9NjAwKTsgYnJlYWsKICAgICAgICAgICAgICAgICAgICBleGNlcHQ6CiAgICAgICAgICAgICAgICAgICAgICAgIGlmIGF0dD09MjogbG9ncy5hcHBlbmQoZiIgIEVycm9yIGJhdGNoIHtpM30iKQogICAgICAgICAgICAgICAgcHJvZ3Jlc3MoKGlkeCsoaTMvbWF4KGxlbihzZWdzKSwxKSkpL2xlbihzb3VyY2VzKSkKICAgICAgICAgICAgZ3AgPSBmImh0dHBzOi8vZ29vcGxheS54eXovZ3Avc3RyZWFtLnBocD9yZXBvPXtybmFtZX0mYnJhbmNoPW1haW4mZmlsZT17bWFuaWZlc3R9IgogICAgICAgICAgICBnaCA9IGYie2h0bWxfdXJsfS9ibG9iL21haW4ve21hbmlmZXN0fSIKICAgICAgICAgICAgZmluYWxfbGlua3MuYXBwZW5kKGYie2ZuYW1lfVxuR29vcGxheToge2dwfVxuR2l0SHViOiB7Z2h9IikKICAgICAgICAgICAgbG9ncy5hcHBlbmQoZiJDb21wbGV0YWRvOiB7Zm5hbWV9Iik7IHlpZWxkICJcbiIuam9pbihsb2dzKSwgbG9ncywgIiIKICAgICAgICAgICAgaWYgZGVsX2xvY2FsOiBzaHV0aWwucm10cmVlKG91dGRpciwgaWdub3JlX2Vycm9ycz1UcnVlKQogICAgICAgIHlpZWxkICJcbiIuam9pbihsb2dzKSwgbG9ncywgIlxuXG4iLmpvaW4oZmluYWxfbGlua3MpCiAgICBleGNlcHQgRXhjZXB0aW9uIGFzIGU6CiAgICAgICAgaW1wb3J0IHRyYWNlYmFjazsgdHJhY2ViYWNrLnByaW50X2V4YygpCiAgICAgICAgbG9ncy5hcHBlbmQoZiJFUlJPUjoge2V9Iik7IHlpZWxkICJcbiIuam9pbihsb2dzKSwgbG9ncywgIiIKCndpdGggZ3IuQmxvY2tzKHRoZW1lPWdyLnRoZW1lcy5Tb2Z0KCkpIGFzIGRlbW86CiAgICBnci5NYXJrZG93bihmIiMgSExTL0RBU0ggQ29udmVydGVyIEVYVFJFTUUgfCBDUFU6e09QVElNQUxfVEhSRUFEU30gfCBSQU06e1JBTURJU0tfUEFUSH0iKQogICAgd2l0aCBnci5Sb3coKToKICAgICAgICB3aXRoIGdyLkNvbHVtbihzY2FsZT0xKToKICAgICAgICAgICAgdG9rZW4gICAgPSBnci5UZXh0Ym94KGxhYmVsPSJHaXRIdWIgVG9rZW4iLCB0eXBlPSJwYXNzd29yZCIsIHBsYWNlaG9sZGVyPSJnaHBfLi4uIikKICAgICAgICAgICAgaWZpbGUgICAgPSBnci5GaWxlKGxhYmVsPSJBcmNoaXZvcyIsIGZpbGVfY291bnQ9Im11bHRpcGxlIikKICAgICAgICAgICAgaXVybHMgICAgPSBnci5UZXh0Ym94KGxhYmVsPSJVUkxzIiwgbGluZXM9NCkKICAgICAgICAgICAgY29udl9vcHQgPSBnci5Ecm9wZG93bihbIk9wY2lvbiAxOiBDb3B5IFZpZGVvIiwiT3BjaW9uIDI6IENvcHkgVmlkZW8gTVAzIiwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIk9wY2lvbiAzOiAxMDgwcCs3MjBwIEgyNjQiLCJPcGNpb24gNDogNEsrMTA4MHArNzIwcCBIMjY0Il0sCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgdmFsdWU9Ik9wY2lvbiAxOiBDb3B5IFZpZGVvIiwgbGFiZWw9Ik1vZG8iKQogICAgICAgICAgICBzZm10ICAgICA9IGdyLkRyb3Bkb3duKFsiSExTIChNM1U4KSIsIkRBU0ggKE1QRCkiXSwgdmFsdWU9IkhMUyAoTTNVOCkiLCBsYWJlbD0iRm9ybWF0byIpCiAgICAgICAgICAgIHdpdGggZ3IuUm93KCk6CiAgICAgICAgICAgICAgICBidmlkID0gZ3IuTnVtYmVyKHZhbHVlPTMwLCBsYWJlbD0iQmF0Y2giLCBwcmVjaXNpb249MCkKICAgICAgICAgICAgICAgIG13a3IgPSBnci5TbGlkZXIoMSw4LDQsc3RlcD0xLGxhYmVsPSJXb3JrZXJzIikKICAgICAgICAgICAgZGxvYyAgPSBnci5DaGVja2JveCh2YWx1ZT1UcnVlLCBsYWJlbD0iQm9ycmFyIGxvY2FsIikKICAgICAgICAgICAgY3R5cGUgPSBnci5SYWRpbyhbIlBlbGljdWxhIiwiU2VyaWUiXSwgdmFsdWU9IlBlbGljdWxhIiwgbGFiZWw9IlRpcG8iKQogICAgICAgICAgICBtbmFtZSA9IGdyLlRleHRib3gobGFiZWw9IlBlbGljdWxhIiwgcGxhY2Vob2xkZXI9IkVsIFBhZHJpbm8iKQogICAgICAgICAgICB3aXRoIGdyLkdyb3VwKHZpc2libGU9RmFsc2UpIGFzIHNnOgogICAgICAgICAgICAgICAgc25hbWUgPSBnci5UZXh0Ym94KGxhYmVsPSJTZXJpZSIsIHBsYWNlaG9sZGVyPSJCcmVha2luZyBCYWQiKQogICAgICAgICAgICAgICAgd2l0aCBnci5Sb3coKToKICAgICAgICAgICAgICAgICAgICBzZWFzID0gZ3IuTnVtYmVyKGxhYmVsPSJUZW1wb3JhZGEiLCB2YWx1ZT0xLCBwcmVjaXNpb249MCwgbWluaW11bT0xKQogICAgICAgICAgICAgICAgICAgIGVwcyAgPSBnci5OdW1iZXIobGFiZWw9IkVwLiBpbmljaWFsIiwgdmFsdWU9MSwgcHJlY2lzaW9uPTAsIG1pbmltdW09MSkKICAgICAgICAgICAgY3R5cGUuY2hhbmdlKGZuPWxhbWJkYSBjOihnci51cGRhdGUodmlzaWJsZT1jPT0iUGVsaWN1bGEiKSxnci51cGRhdGUodmlzaWJsZT1jPT0iU2VyaWUiKSksCiAgICAgICAgICAgICAgICAgICAgICAgICBpbnB1dHM9Y3R5cGUsIG91dHB1dHM9W21uYW1lLHNnXSkKICAgICAgICAgICAgYnRuID0gZ3IuQnV0dG9uKCJQUk9DRVNBUiIsIHZhcmlhbnQ9InByaW1hcnkiLCBzaXplPSJsZyIpCiAgICAgICAgd2l0aCBnci5Db2x1bW4oc2NhbGU9Mik6CiAgICAgICAgICAgIGxvZ3Nfb3V0ICA9IGdyLlRleHRib3gobGFiZWw9IkxvZ3MiLCBsaW5lcz0yOCwgaW50ZXJhY3RpdmU9RmFsc2UpCiAgICAgICAgICAgIGxpbmtzX291dCA9IGdyLlRleHRib3gobGFiZWw9IkxpbmtzIiwgbGluZXM9MTAsIGludGVyYWN0aXZlPUZhbHNlKQogICAgYnRuLmNsaWNrKGZuPXByb2Nlc3NfYnVsaywKICAgICAgICAgICAgICBpbnB1dHM9W3Rva2VuLGlmaWxlLGl1cmxzLGNvbnZfb3B0LHNmbXQsYnZpZCxkbG9jLG13a3IsY3R5cGUsbW5hbWUsc25hbWUsc2VhcyxlcHNdLAogICAgICAgICAgICAgIG91dHB1dHM9W2xvZ3Nfb3V0LGdyLlN0YXRlKCksbGlua3Nfb3V0XSkKCmlmIF9fbmFtZV9fID09ICJfX21haW5fXyI6CiAgICBkZW1vLmxhdW5jaCgpCg=="
-          $bytes = [System.Convert]::FromBase64String($b64)
-          [System.IO.File]::WriteAllBytes("C:\scripts\hls_dash_converter.py", $bytes)
-          Write-Host "Script 2 escrito: $(Get-Item 'C:\scripts\hls_dash_converter.py').Length bytes"
-
-      # =======================================================
-      # 9. CONFIGURAR RDP
-      # =======================================================
+      # ─────────────────────────────────────────
+      # 4. CONFIGURAR RDP
+      # ─────────────────────────────────────────
       - name: Configure RDP
         shell: pwsh
         run: |
-          Set-ItemProperty 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name fDenyTSConnections -Value 0 -Force
-          Set-ItemProperty 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name UserAuthentication -Value 0 -Force
-          Set-ItemProperty 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name SecurityLayer -Value 0 -Force
-          netsh advfirewall firewall delete rule name="RDP-Tailscale" 2>$null
-          netsh advfirewall firewall add rule name="RDP-Tailscale" dir=in action=allow protocol=TCP localport=3389
+          Set-ItemProperty 'HKLM:\System\CurrentControlSet\Control\Terminal Server' `
+            -Name fDenyTSConnections -Value 0 -Force
+          Set-ItemProperty 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
+            -Name UserAuthentication -Value 0 -Force
+          Set-ItemProperty 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
+            -Name SecurityLayer -Value 0 -Force
+          netsh advfirewall firewall delete rule name="RDP-In" 2>$null
+          netsh advfirewall firewall add rule name="RDP-In" dir=in action=allow protocol=TCP localport=3389
           Restart-Service TermService -Force
           Write-Host "RDP configurado"
 
-      # =======================================================
-      # 10. CREAR USUARIO RDP
-      # =======================================================
+      # ─────────────────────────────────────────
+      # 5. CREAR USUARIO RDP
+      # ─────────────────────────────────────────
       - name: Create RDP User
         shell: pwsh
         run: |
-          $pw  = "${{ github.event.inputs.rdp_password }}"
+          $pw  = '${{ github.event.inputs.rdp_password }}'
           $sec = ConvertTo-SecureString $pw -AsPlainText -Force
-          New-LocalUser -Name "RDP" -Password $sec -AccountNeverExpires
+          New-LocalUser -Name "RDP" -Password $sec -AccountNeverExpires -ErrorAction Stop
           Add-LocalGroupMember -Group "Administrators"       -Member "RDP"
           Add-LocalGroupMember -Group "Remote Desktop Users" -Member "RDP"
-          if (-not (Get-LocalUser -Name "RDP")) { Write-Error "User creation failed"; exit 1 }
           Write-Host "Usuario RDP creado"
 
-      # =======================================================
-      # 11. INSTALAR TAILSCALE
-      # =======================================================
+      # ─────────────────────────────────────────
+      # 6. INSTALAR TAILSCALE
+      # ─────────────────────────────────────────
       - name: Install Tailscale
         shell: pwsh
         run: |
           $url  = "https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi"
           $inst = "$env:TEMP\tailscale.msi"
-          Invoke-WebRequest -Uri $url -OutFile $inst
-          Start-Process msiexec.exe -ArgumentList "/i","$inst","/quiet","/norestart" -Wait
+          Invoke-WebRequest -Uri $url -OutFile $inst -UseBasicParsing
+          Start-Process msiexec.exe -ArgumentList "/i `"$inst`" /quiet /norestart" -Wait
           Remove-Item $inst -Force
           Write-Host "Tailscale instalado"
 
-      # =======================================================
-      # 12. CONECTAR TAILSCALE
-      # =======================================================
+      # ─────────────────────────────────────────
+      # 7. CONECTAR TAILSCALE Y OBTENER IP
+      # ─────────────────────────────────────────
       - name: Connect Tailscale
         shell: pwsh
         run: |
-          & "$env:ProgramFiles\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=gh-runner-$env:GITHUB_RUN_ID
-          $ip = $null; $n = 0
-          while (-not $ip -and $n -lt 10) {
-            $ip = & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4
-            Start-Sleep 5; $n++
+          $ts = "$env:ProgramFiles\Tailscale\tailscale.exe"
+          & $ts up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname="gh-$env:GITHUB_RUN_ID" --accept-routes
+          $ip = $null
+          for ($i = 0; $i -lt 15; $i++) {
+            Start-Sleep 4
+            $ip = (& $ts ip -4 2>$null) | Select-Object -First 1
+            if ($ip) { break }
           }
-          if (-not $ip) { Write-Error "Tailscale IP no asignada"; exit 1 }
-          echo "TAILSCALE_IP=$ip" >> $env:GITHUB_ENV
+          if (-not $ip) { Write-Error "Tailscale: no se obtuvo IP"; exit 1 }
+          "TAILSCALE_IP=$ip" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           Write-Host "Tailscale IP: $ip"
 
-      # =======================================================
-      # 13. VERIFICAR RDP
-      # =======================================================
+      # ─────────────────────────────────────────
+      # 8. VERIFICAR RDP
+      # ─────────────────────────────────────────
       - name: Verify RDP
         shell: pwsh
         run: |
-          $t = Test-NetConnection -ComputerName $env:TAILSCALE_IP -Port 3389
-          if (-not $t.TcpTestSucceeded) { Write-Error "RDP no accesible"; exit 1 }
-          Write-Host "RDP accesible en $($env:TAILSCALE_IP):3389"
+          $t = Test-NetConnection -ComputerName $env:TAILSCALE_IP -Port 3389 -WarningAction SilentlyContinue
+          if (-not $t.TcpTestSucceeded) { Write-Error "Puerto 3389 no accesible"; exit 1 }
+          Write-Host "RDP OK en $($env:TAILSCALE_IP):3389"
 
-      # =======================================================
-      # 14. MANTENER SESION
-      # =======================================================
-      - name: Maintain Connection
+      # ─────────────────────────────────────────
+      # 9. MANTENER SESIÓN (~5 h 45 min)
+      # ─────────────────────────────────────────
+      - name: Keep Alive
         shell: pwsh
         run: |
           Write-Host ""
           Write-Host "========================================"
           Write-Host "  RDP LISTO"
-          Write-Host "  IP:      $env:TAILSCALE_IP"
-          Write-Host "  Usuario: RDP"
-          Write-Host "  Scripts:"
-          Write-Host "    C:\scripts\video_converter.py"
-          Write-Host "    C:\scripts\hls_dash_converter.py"
-          Write-Host "  FFmpeg:  C:\ffmpeg"
-          Write-Host "  Brave:   instalado"
+          Write-Host "  IP      : $env:TAILSCALE_IP"
+          Write-Host "  Usuario : RDP"
+          Write-Host "  Puerto  : 3389"
+          Write-Host "  FFmpeg  : C:\ffmpeg"
+          Write-Host "  Brave   : instalado"
           Write-Host "========================================"
-          Write-Host ""
-          while ($true) {
-            $disk = [math]::Round((Get-PSDrive C).Free/1GB, 2)
-            $ram  = [math]::Round((Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory/1MB, 2)
+          $end = (Get-Date).AddMinutes(340)
+          while ((Get-Date) -lt $end) {
+            $disk = [math]::Round((Get-PSDrive C).Free / 1GB, 2)
+            $ram  = [math]::Round((Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory / 1MB, 2)
             Write-Host "[$(Get-Date -Format 'HH:mm:ss')] Activo | Disco: $disk GB | RAM: $ram GB"
-            Start-Sleep 300
+            Start-Sleep 60
           }
+          Write-Host "Sesion finalizada (limite de tiempo alcanzado)"
