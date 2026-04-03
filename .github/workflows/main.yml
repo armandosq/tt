@@ -94,7 +94,18 @@ jobs:
           Write-Host "FFmpeg instalado en C:\ffmpeg"
 
       # ─────────────────────────────────────────
-      # 4. CONFIGURAR RDP
+      # 4. INSTALAR LIBRERÍAS PYTHON
+      # ─────────────────────────────────────────
+      - name: Install Python Libraries (HuggingFace & Requests)
+        shell: pwsh
+        run: |
+          # Se usa el python preinstalado en el runner
+          python -m pip install --upgrade pip
+          pip install transformers requests
+          Write-Host "Librerías instaladas: transformers (HuggingFace) y requests"
+
+      # ─────────────────────────────────────────
+      # 5. CONFIGURAR RDP
       # ─────────────────────────────────────────
       - name: Configure RDP
         shell: pwsh
@@ -111,7 +122,7 @@ jobs:
           Write-Host "RDP configurado"
 
       # ─────────────────────────────────────────
-      # 5. CREAR USUARIO RDP
+      # 6. CREAR USUARIO RDP
       # ─────────────────────────────────────────
       - name: Create RDP User
         shell: pwsh
@@ -124,7 +135,7 @@ jobs:
           Write-Host "Usuario RDP creado"
 
       # ─────────────────────────────────────────
-      # 6. INSTALAR TAILSCALE
+      # 7. INSTALAR TAILSCALE
       # ─────────────────────────────────────────
       - name: Install Tailscale
         shell: pwsh
@@ -137,7 +148,7 @@ jobs:
           Write-Host "Tailscale instalado"
 
       # ─────────────────────────────────────────
-      # 7. CONECTAR TAILSCALE Y OBTENER IP
+      # 8. CONECTAR TAILSCALE Y OBTENER IP
       # ─────────────────────────────────────────
       - name: Connect Tailscale
         shell: pwsh
@@ -155,7 +166,7 @@ jobs:
           Write-Host "Tailscale IP: $ip"
 
       # ─────────────────────────────────────────
-      # 8. VERIFICAR RDP
+      # 9. VERIFICAR RDP
       # ─────────────────────────────────────────
       - name: Verify RDP
         shell: pwsh
@@ -165,7 +176,7 @@ jobs:
           Write-Host "RDP OK en $($env:TAILSCALE_IP):3389"
 
       # ─────────────────────────────────────────
-      # 9. MANTENER SESIÓN (~5 h 45 min)
+      # 10. MANTENER SESIÓN (~5 h 45 min)
       # ─────────────────────────────────────────
       - name: Keep Alive
         shell: pwsh
@@ -178,6 +189,7 @@ jobs:
           Write-Host "  Puerto  : 3389"
           Write-Host "  FFmpeg  : C:\ffmpeg"
           Write-Host "  Brave   : instalado"
+          Write-Host "  Python  : transformers, requests"
           Write-Host "========================================"
           $end = (Get-Date).AddMinutes(340)
           while ((Get-Date) -lt $end) {
