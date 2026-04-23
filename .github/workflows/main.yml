@@ -21,6 +21,7 @@ jobs:
       - name: Free Disk Space
         shell: pwsh
         run: |
+          Write-Host "Liberando espacio..."
           $paths = @(
             "C:\hostedtoolcache\windows\go",
             "C:\hostedtoolcache\windows\node",
@@ -30,30 +31,14 @@ jobs:
             "C:\Program Files (x86)\Microsoft Visual Studio",
             "C:\Program Files\Microsoft Visual Studio",
             "C:\Program Files (x86)\Android",
-            "C:\Program Files\Android",
-            "C:\Program Files\MongoDB",
-            "C:\Program Files\MySQL",
-            "C:\Program Files\PostgreSQL",
-            "C:\Program Files\R",
-            "C:\Program Files\Amazon",
-            "C:\Program Files\Google\Chrome",
-            "C:\Program Files\Mozilla Firefox",
-            "C:\Program Files (x86)\Windows Kits",
-            "C:\Program Files\LLVM",
-            "C:\ProgramData\chocolatey\lib",
-            "C:\tools\php",
-            "C:\Strawberry"
+            "C:\Program Files\Android"
           )
           foreach ($p in $paths) {
             if (Test-Path $p) {
+              Write-Host "Eliminando $p"
               Remove-Item $p -Recurse -Force -ErrorAction SilentlyContinue
             }
           }
-          Stop-Service wuauserv -Force -ErrorAction SilentlyContinue
-          Remove-Item "C:\Windows\SoftwareDistribution\Download\*" -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item "$env:TEMP\*"             -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item "C:\Windows\Temp\*"       -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item "C:\Windows\Prefetch\*"   -Recurse -Force -ErrorAction SilentlyContinue
           $free = [math]::Round((Get-PSDrive C).Free / 1GB, 2)
           Write-Host "Disco libre: $free GB"
 
@@ -71,7 +56,6 @@ jobs:
           $cur = [System.Environment]::GetEnvironmentVariable("PATH", "Machine")
           [System.Environment]::SetEnvironmentVariable("PATH", "$cur;C:\Program Files\7-Zip", "Machine")
           $env:PATH += ";C:\Program Files\7-Zip"
-          7z i | Select-Object -First 2
           Write-Host "7-Zip instalado"
 
       # ─────────────────────────────────────────
@@ -135,18 +119,12 @@ jobs:
       - name: Download HuggingFace Scripts to Downloads
         shell: pwsh
         run: |
-          $downloads = "$env:USERPROFILE\Downloads"
+          $downloads = "C:\Users\runneradmin\Downloads"
           if (-not (Test-Path $downloads)) { New-Item -ItemType Directory -Path $downloads | Out-Null }
 
           $files = @(
-            @{
-              Url  = "https://huggingface.co/CineMax/plis2/resolve/main/hls.py?download=true"
-              Name = "hls.py"
-            },
-            @{
-              Url  = "https://huggingface.co/CineMax/plis2/resolve/main/hug.py?download=true"
-              Name = "hug.py"
-            }
+            @{ Url = "https://huggingface.co/CineMax/plis2/resolve/main/hls.py?download=true"; Name = "hls.py" },
+            @{ Url = "https://huggingface.co/CineMax/plis2/resolve/main/hug.py?download=true"; Name = "hug.py" }
           )
 
           foreach ($f in $files) {
@@ -241,12 +219,11 @@ jobs:
           Write-Host "  IP       : $env:TAILSCALE_IP"
           Write-Host "  Usuario  : RDP"
           Write-Host "  Puerto   : 3389"
-          Write-Host "  Sistema  : Windows Server 2019 (compatible Windows 10)"
           Write-Host "  FFmpeg   : C:\ffmpeg"
           Write-Host "  7-Zip    : C:\Program Files\7-Zip"
           Write-Host "  Brave    : instalado"
-          Write-Host "  Scripts  : %USERPROFILE%\Downloads\hls.py"
-          Write-Host "             %USERPROFILE%\Downloads\hug.py"
+          Write-Host "  Scripts  : C:\Users\runneradmin\Downloads\hls.py"
+          Write-Host "             C:\Users\runneradmin\Downloads\hug.py"
           Write-Host "  Python   : transformers, datasets, huggingface_hub,"
           Write-Host "             accelerate, tokenizers, diffusers,"
           Write-Host "             PyGithub, requests, httpx, aiohttp,"
