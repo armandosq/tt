@@ -15,42 +15,33 @@ jobs:
 
     steps:
 
-      - name: Free Disk Space + Symlinks
+      - name: Free Disk Space + Install Tools
         shell: pwsh
         run: |
-          # Limpiar D: completamente
-          Get-ChildItem "D:\" -Force | Remove-Item -Recurse -Force -EA SilentlyContinue
-
-          # Liberar C:
+          # Liberar C: al maximo
           @(
-            "C:\hostedtoolcache\windows\go",
-            "C:\hostedtoolcache\windows\node",
-            "C:\hostedtoolcache\windows\PyPy",
-            "C:\hostedtoolcache\windows\Ruby",
+            "C:\hostedtoolcache",
             "C:\Program Files\dotnet",
             "C:\Program Files (x86)\Microsoft Visual Studio",
             "C:\Program Files\Microsoft Visual Studio",
             "C:\Program Files (x86)\Android",
-            "C:\Program Files\Android"
+            "C:\Program Files\Android",
+            "C:\Program Files\MongoDB",
+            "C:\Program Files\MySQL",
+            "C:\Program Files\PostgreSQL",
+            "C:\Program Files\Microsoft SQL Server",
+            "C:\Program Files (x86)\Microsoft SDKs",
+            "C:\Program Files\Microsoft SDKs",
+            "C:\ProgramData\chocolatey",
+            "C:\ProgramData\Microsoft\VisualStudio",
+            "C:\ProgramData\MongoDB",
+            "C:\ProgramData\MySQL",
+            "C:\Windows\Temp",
+            "C:\Windows\SoftwareDistribution\Download",
+            "C:\Users\runneradmin\AppData\Local\Temp",
+            "C:\Users\runneradmin\AppData\Local\npm-cache",
+            "C:\Users\runneradmin\AppData\Roaming\npm-cache"
           ) | ForEach-Object { if (Test-Path $_) { Remove-Item $_ -Recurse -Force -EA SilentlyContinue } }
-
-          # Symlinks: carpetas de C: apuntan a D:
-          $links = @(
-            @{ Link="C:\Users\runneradmin\Downloads"; Target="D:\Downloads" },
-            @{ Link="C:\Users\runneradmin\Documents"; Target="D:\Documents" },
-            @{ Link="C:\Users\runneradmin\Desktop";   Target="D:\Desktop"   },
-            @{ Link="C:\Users\runneradmin\Videos";    Target="D:\Videos"    },
-            @{ Link="C:\Users\runneradmin\Music";     Target="D:\Music"     },
-            @{ Link="C:\Users\runneradmin\Pictures";  Target="D:\Pictures"  },
-            @{ Link="C:\Temp";                        Target="D:\Temp"      },
-            @{ Link="C:\Work";                        Target="D:\Work"      }
-          )
-          foreach ($s in $links) {
-            New-Item -ItemType Directory -Path $s.Target -Force | Out-Null
-            if (Test-Path $s.Link) { Remove-Item $s.Link -Recurse -Force -EA SilentlyContinue }
-            cmd /c mklink /D "$($s.Link)" "$($s.Target)" | Out-Null
-            Write-Host "Enlazado: $($s.Link) -> $($s.Target)"
-          }
 
           Write-Host "C: libre: $([math]::Round((Get-PSDrive C).Free/1GB,2)) GB"
           Write-Host "D: libre: $([math]::Round((Get-PSDrive D).Free/1GB,2)) GB"
@@ -78,6 +69,7 @@ jobs:
           Remove-Item $br -Force -EA SilentlyContinue
 
           Write-Host "Herramientas instaladas"
+          Write-Host "C: libre final: $([math]::Round((Get-PSDrive C).Free/1GB,2)) GB"
 
       - name: Python + Scripts
         shell: pwsh
@@ -117,7 +109,6 @@ jobs:
           Start-Process msiexec.exe -ArgumentList "/i `"$msi`" /quiet /norestart" -Wait
           Remove-Item $msi -Force
 
-          # Esperar a que el exe exista
           $ts = $null
           $paths = @(
             "C:\Program Files\Tailscale\tailscale.exe",
