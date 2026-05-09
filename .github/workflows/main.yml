@@ -15,12 +15,11 @@ jobs:
 
     steps:
 
-      - name: Free Disk Space + Install Tools
+      - name: Free Disk Space + Symlinks
         shell: pwsh
         run: |
           # Limpiar D: completamente
           Get-ChildItem "D:\" -Force | Remove-Item -Recurse -Force -EA SilentlyContinue
-          Write-Host "D: libre: $([math]::Round((Get-PSDrive D).Free/1GB,2)) GB"
 
           # Liberar C:
           @(
@@ -34,7 +33,27 @@ jobs:
             "C:\Program Files (x86)\Android",
             "C:\Program Files\Android"
           ) | ForEach-Object { if (Test-Path $_) { Remove-Item $_ -Recurse -Force -EA SilentlyContinue } }
+
+          # Symlinks: carpetas de C: apuntan a D:
+          $links = @(
+            @{ Link="C:\Users\runneradmin\Downloads"; Target="D:\Downloads" },
+            @{ Link="C:\Users\runneradmin\Documents"; Target="D:\Documents" },
+            @{ Link="C:\Users\runneradmin\Desktop";   Target="D:\Desktop"   },
+            @{ Link="C:\Users\runneradmin\Videos";    Target="D:\Videos"    },
+            @{ Link="C:\Users\runneradmin\Music";     Target="D:\Music"     },
+            @{ Link="C:\Users\runneradmin\Pictures";  Target="D:\Pictures"  },
+            @{ Link="C:\Temp";                        Target="D:\Temp"      },
+            @{ Link="C:\Work";                        Target="D:\Work"      }
+          )
+          foreach ($s in $links) {
+            New-Item -ItemType Directory -Path $s.Target -Force | Out-Null
+            if (Test-Path $s.Link) { Remove-Item $s.Link -Recurse -Force -EA SilentlyContinue }
+            cmd /c mklink /D "$($s.Link)" "$($s.Target)" | Out-Null
+            Write-Host "Enlazado: $($s.Link) -> $($s.Target)"
+          }
+
           Write-Host "C: libre: $([math]::Round((Get-PSDrive C).Free/1GB,2)) GB"
+          Write-Host "D: libre: $([math]::Round((Get-PSDrive D).Free/1GB,2)) GB"
 
           # FFmpeg
           $zip = "$env:TEMP\ffmpeg.zip"; $dest = "C:\ffmpeg"
