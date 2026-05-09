@@ -18,7 +18,10 @@ jobs:
       - name: Free Disk Space + Install Tools
         shell: pwsh
         run: |
-          # Liberar espacio
+          # Limpiar D: completamente
+          Get-ChildItem "D:\" -Force | Remove-Item -Recurse -Force -EA SilentlyContinue
+
+          # Liberar C: al máximo
           @(
             "C:\hostedtoolcache\windows\go",
             "C:\hostedtoolcache\windows\node",
@@ -28,12 +31,20 @@ jobs:
             "C:\Program Files (x86)\Microsoft Visual Studio",
             "C:\Program Files\Microsoft Visual Studio",
             "C:\Program Files (x86)\Android",
-            "C:\Program Files\Android"
+            "C:\Program Files\Android",
+            "C:\Program Files\MongoDB",
+            "C:\Program Files\MySQL",
+            "C:\Program Files\PostgreSQL",
+            "C:\Program Files\Microsoft SQL Server",
+            "C:\ProgramData\chocolatey",
+            "C:\Windows\Temp"
           ) | ForEach-Object { if (Test-Path $_) { Remove-Item $_ -Recurse -Force -EA SilentlyContinue } }
-          Write-Host "Disco libre: $([math]::Round((Get-PSDrive C).Free/1GB,2)) GB"
 
-          # FFmpeg
-          $zip = "$env:TEMP\ffmpeg.zip"; $dest = "C:\ffmpeg"
+          Write-Host "C: libre: $([math]::Round((Get-PSDrive C).Free/1GB,2)) GB"
+          Write-Host "D: libre: $([math]::Round((Get-PSDrive D).Free/1GB,2)) GB"
+
+          # FFmpeg en C:
+          $zip = "C:\ffmpeg.zip"; $dest = "C:\ffmpeg"
           Invoke-WebRequest "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip" -OutFile $zip -UseBasicParsing
           Expand-Archive $zip $dest -Force; Remove-Item $zip -Force
           $inner = Get-ChildItem $dest -Directory | Select-Object -First 1
@@ -42,19 +53,20 @@ jobs:
           [System.Environment]::SetEnvironmentVariable("PATH","$p;$dest;C:\Program Files\7-Zip","Machine")
           $env:PATH += ";$dest;C:\Program Files\7-Zip"
 
-          # 7-Zip
-          $msi = "$env:TEMP\7zip.msi"
+          # 7-Zip en C:
+          $msi = "C:\7zip.msi"
           Invoke-WebRequest "https://www.7-zip.org/a/7z2301-x64.msi" -OutFile $msi -UseBasicParsing
           Start-Process msiexec.exe -ArgumentList "/i `"$msi`" /quiet /norestart" -Wait
           Remove-Item $msi -Force -EA SilentlyContinue
 
-          # Brave
-          $br = "$env:TEMP\brave.exe"
+          # Brave en C:
+          $br = "C:\brave.exe"
           Invoke-WebRequest "https://referrals.brave.com/latest/BraveBrowserSetup-BRV010.exe" -OutFile $br -UseBasicParsing
           Start-Process $br -ArgumentList "/silent","/install" -Wait
           Remove-Item $br -Force -EA SilentlyContinue
 
           Write-Host "Herramientas instaladas"
+          Write-Host "D: libre final: $([math]::Round((Get-PSDrive D).Free/1GB,2)) GB"
 
       - name: Python + Scripts
         shell: pwsh
@@ -89,7 +101,7 @@ jobs:
       - name: Install + Connect Tailscale
         shell: pwsh
         run: |
-          $msi = "$env:TEMP\tailscale.msi"
+          $msi = "C:\tailscale.msi"
           Invoke-WebRequest "https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi" -OutFile $msi -UseBasicParsing
           Start-Process msiexec.exe -ArgumentList "/i `"$msi`" /quiet /norestart" -Wait
           Remove-Item $msi -Force
@@ -117,8 +129,9 @@ jobs:
         run: |
           $end = (Get-Date).AddMinutes(340)
           while ((Get-Date) -lt $end) {
-            $disk = [math]::Round((Get-PSDrive C).Free/1GB,2)
-            $ram  = [math]::Round((Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory/1MB,2)
-            Write-Host "[$(Get-Date -Format 'HH:mm:ss')] Disco: $disk GB | RAM: $ram GB"
+            $disk  = [math]::Round((Get-PSDrive C).Free/1GB,2)
+            $diskD = [math]::Round((Get-PSDrive D).Free/1GB,2)
+            $ram   = [math]::Round((Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory/1MB,2)
+            Write-Host "[$(Get-Date -Format 'HH:mm:ss')] C: $disk GB | D: $diskD GB | RAM: $ram GB"
             Start-Sleep 60
           }
