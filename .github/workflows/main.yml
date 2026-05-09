@@ -106,7 +106,23 @@ jobs:
           Start-Process msiexec.exe -ArgumentList "/i `"$msi`" /quiet /norestart" -Wait
           Remove-Item $msi -Force
 
-          $ts = "$env:ProgramFiles\Tailscale\tailscale.exe"
+          # Esperar a que el exe exista
+          $ts = $null
+          $paths = @(
+            "C:\Program Files\Tailscale\tailscale.exe",
+            "C:\Program Files (x86)\Tailscale\tailscale.exe"
+          )
+          for ($i=0; $i -lt 20; $i++) {
+            foreach ($p in $paths) {
+              if (Test-Path $p) { $ts = $p; break }
+            }
+            if ($ts) { break }
+            Write-Host "Esperando Tailscale... ($i)"
+            Start-Sleep 3
+          }
+          if (-not $ts) { Write-Error "Tailscale exe no encontrado"; exit 1 }
+          Write-Host "Tailscale encontrado en: $ts"
+
           & $ts up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname="gh-$env:GITHUB_RUN_ID" --accept-routes
           $ip = $null
           for ($i=0; $i -lt 15; $i++) {
