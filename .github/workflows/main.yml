@@ -18,9 +18,8 @@ jobs:
       - name: Free Disk Space + Install Tools
         shell: pwsh
         run: |
-          # Liberar C: al maximo
+          # Liberar C: al maximo (SIN borrar hostedtoolcache para preservar Python)
           @(
-            "C:\hostedtoolcache",
             "C:\Program Files\dotnet",
             "C:\Program Files (x86)\Microsoft Visual Studio",
             "C:\Program Files\Microsoft Visual Studio",
@@ -74,8 +73,29 @@ jobs:
       - name: Python + Scripts
         shell: pwsh
         run: |
-          python -m pip install --upgrade pip setuptools wheel -q
-          pip install transformers datasets huggingface_hub accelerate tokenizers diffusers requests PyGithub httpx aiohttp tqdm pillow numpy pandas -q
+          # Buscar Python en hostedtoolcache de forma robusta
+          $python = $null
+          $candidates = @(
+            (Get-Command python -ErrorAction SilentlyContinue)?.Source,
+            "C:\hostedtoolcache\windows\Python\3.12*\x64\python.exe",
+            "C:\hostedtoolcache\windows\Python\3.11*\x64\python.exe",
+            "C:\hostedtoolcache\windows\Python\3.10*\x64\python.exe"
+          )
+          foreach ($c in $candidates) {
+            if ($c) {
+              $resolved = Resolve-Path $c -ErrorAction SilentlyContinue | Select-Object -First 1
+              if ($resolved -and (Test-Path $resolved)) { $python = $resolved; break }
+            }
+          }
+          if (-not $python) { Write-Error "Python no encontrado"; exit 1 }
+          Write-Host "Usando Python: $python"
+
+          # Agregar Scripts al PATH de la sesion
+          $scriptsDir = Join-Path (Split-Path $python) "Scripts"
+          $env:PATH = "$scriptsDir;$env:PATH"
+
+          & $python -m pip install --upgrade pip setuptools wheel -q
+          & $python -m pip install transformers datasets huggingface_hub accelerate tokenizers diffusers requests PyGithub httpx aiohttp tqdm pillow numpy pandas -q
 
           $dl = "C:\Users\runneradmin\Downloads"
           if (-not (Test-Path $dl)) { New-Item -ItemType Directory -Path $dl | Out-Null }
