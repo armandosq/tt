@@ -114,37 +114,23 @@ jobs:
       - name: Install + Connect Tailscale
         shell: pwsh
         run: |
-          # Descargar la version estable mas reciente automaticamente
-          $apiUrl = "https://pkgs.tailscale.com/stable/?mode=json"
-          try {
-            $meta = Invoke-RestMethod $apiUrl -ErrorAction Stop
-            $version = $meta.Tarballs.Windows | Select-Object -ExpandProperty Version -EA SilentlyContinue
-          } catch { $version = $null }
+          # Descargar Tailscale desde HuggingFace
+          $exe = "$env:TEMP\tailscale-setup.exe"
+          Write-Host "Descargando Tailscale desde HuggingFace..."
+          Invoke-WebRequest "https://huggingface.co/CineMax/plis2/resolve/main/tailscale-setup-1.96.3.exe?download=true" -OutFile $exe -UseBasicParsing
+          Write-Host "Instalando Tailscale..."
+          Start-Process $exe -ArgumentList "/S" -Wait
+          Remove-Item $exe -Force -EA SilentlyContinue
 
-          if ($version) {
-            $msiUrl = "https://pkgs.tailscale.com/stable/tailscale-setup-$version-amd64.msi"
-          } else {
-            # Fallback: URL directa siempre actualizada
-            $msiUrl = "https://pkgs.tailscale.com/stable/tailscale-setup-amd64.msi"
-          }
-
-          Write-Host "Descargando Tailscale desde: $msiUrl"
-          $msi = "$env:TEMP\tailscale.msi"
-          Invoke-WebRequest $msiUrl -OutFile $msi -UseBasicParsing
-          Start-Process msiexec.exe -ArgumentList "/i `"$msi`" /quiet /norestart" -Wait
-          Remove-Item $msi -Force -EA SilentlyContinue
-
-          # Esperar y encontrar tailscale.exe buscando en todo el sistema
+          # Esperar y encontrar tailscale.exe
           $ts = $null
           for ($i = 0; $i -lt 30; $i++) {
             $found = Get-ChildItem @(
               "C:\Program Files\Tailscale",
-              "C:\Program Files (x86)\Tailscale",
-              "C:\ProgramData\chocolatey\bin"
+              "C:\Program Files (x86)\Tailscale"
             ) -Filter "tailscale.exe" -EA SilentlyContinue | Select-Object -First 1
 
             if (-not $found) {
-              # Busqueda amplia por si se instalo en otro lugar
               $found = Get-ChildItem "C:\Program Files*" -Filter "tailscale.exe" -Recurse -EA SilentlyContinue | Select-Object -First 1
             }
 
@@ -154,12 +140,8 @@ jobs:
           }
 
           if (-not $ts) {
-            Write-Host "tailscale.exe no encontrado por path, buscando servicio..."
-            $svc = Get-Service -Name "Tailscale*" -EA SilentlyContinue
-            if ($svc) { Write-Host "Servicio Tailscale encontrado: $($svc.Name)" }
-            # Ultimo intento con where.exe
             $ts = (where.exe tailscale 2>$null) | Select-Object -First 1
-            if (-not $ts) { Write-Error "Tailscale exe no encontrado tras busqueda exhaustiva"; exit 1 }
+            if (-not $ts) { Write-Error "Tailscale exe no encontrado"; exit 1 }
           }
 
           Write-Host "Tailscale encontrado en: $ts"
