@@ -18,7 +18,6 @@ jobs:
       - name: Free Disk Space + Install Tools
         shell: pwsh
         run: |
-          # Liberar C: al maximo (SIN borrar hostedtoolcache para preservar Python)
           @(
             "C:\Program Files\dotnet",
             "C:\Program Files (x86)\Microsoft Visual Studio",
@@ -43,7 +42,6 @@ jobs:
           ) | ForEach-Object { if (Test-Path $_) { Remove-Item $_ -Recurse -Force -EA SilentlyContinue } }
 
           Write-Host "C: libre: $([math]::Round((Get-PSDrive C).Free/1GB,2)) GB"
-          Write-Host "D: libre: $([math]::Round((Get-PSDrive D).Free/1GB,2)) GB"
 
           # FFmpeg
           $zip = "$env:TEMP\ffmpeg.zip"; $dest = "C:\ffmpeg"
@@ -67,30 +65,22 @@ jobs:
           Start-Process $br -ArgumentList "/silent","/install" -Wait
           Remove-Item $br -Force -EA SilentlyContinue
 
-          Write-Host "Herramientas instaladas"
-          Write-Host "C: libre final: $([math]::Round((Get-PSDrive C).Free/1GB,2)) GB"
+          Write-Host "Herramientas instaladas. C: libre: $([math]::Round((Get-PSDrive C).Free/1GB,2)) GB"
 
       - name: Python + Scripts
         shell: pwsh
         run: |
-          # Buscar Python en hostedtoolcache de forma robusta
           $python = $null
           $candidates = @(
-            (Get-Command python -ErrorAction SilentlyContinue)?.Source,
-            "C:\hostedtoolcache\windows\Python\3.12*\x64\python.exe",
-            "C:\hostedtoolcache\windows\Python\3.11*\x64\python.exe",
-            "C:\hostedtoolcache\windows\Python\3.10*\x64\python.exe"
-          )
+            (Get-Command python -ErrorAction SilentlyContinue)?.Source
+          ) + (Get-ChildItem "C:\hostedtoolcache\windows\Python" -Filter "python.exe" -Recurse -EA SilentlyContinue | Where-Object { $_.FullName -match "x64" } | Select-Object -ExpandProperty FullName)
+
           foreach ($c in $candidates) {
-            if ($c) {
-              $resolved = Resolve-Path $c -ErrorAction SilentlyContinue | Select-Object -First 1
-              if ($resolved -and (Test-Path $resolved)) { $python = $resolved; break }
-            }
+            if ($c -and (Test-Path $c)) { $python = $c; break }
           }
           if (-not $python) { Write-Error "Python no encontrado"; exit 1 }
           Write-Host "Usando Python: $python"
 
-          # Agregar Scripts al PATH de la sesion
           $scriptsDir = Join-Path (Split-Path $python) "Scripts"
           $env:PATH = "$scriptsDir;$env:PATH"
 
@@ -124,39 +114,77 @@ jobs:
       - name: Install + Connect Tailscale
         shell: pwsh
         run: |
-          $msi = "$env:TEMP\tailscale.msi"
-          Invoke-WebRequest "https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi" -OutFile $msi -UseBasicParsing
-          Start-Process msiexec.exe -ArgumentList "/i `"$msi`" /quiet /norestart" -Wait
-          Remove-Item $msi -Force
+          # Descargar la version estable mas reciente automaticamente
+          $apiUrl = "https://pkgs.tailscale.com/stable/?mode=json"
+          try {
+            $meta = Invoke-RestMethod $apiUrl -ErrorAction Stop
+            $version = $meta.Tarballs.Windows | Select-Object -ExpandProperty Version -EA SilentlyContinue
+          } catch { $version = $null }
 
+          if ($version) {
+            $msiUrl = "https://pkgs.tailscale.com/stable/tailscale-setup-$version-amd64.msi"
+          } else {
+            # Fallback: URL directa siempre actualizada
+            $msiUrl = "https://pkgs.tailscale.com/stable/tailscale-setup-amd64.msi"
+          }
+
+          Write-Host "Descargando Tailscale desde: $msiUrl"
+          $msi = "$env:TEMP\tailscale.msi"
+          Invoke-WebRequest $msiUrl -OutFile $msi -UseBasicParsing
+          Start-Process msiexec.exe -ArgumentList "/i `"$msi`" /quiet /norestart" -Wait
+          Remove-Item $msi -Force -EA SilentlyContinue
+
+          # Esperar y encontrar tailscale.exe buscando en todo el sistema
           $ts = $null
-          $paths = @(
-            "C:\Program Files\Tailscale\tailscale.exe",
-            "C:\Program Files (x86)\Tailscale\tailscale.exe"
-          )
-          for ($i=0; $i -lt 20; $i++) {
-            foreach ($p in $paths) {
-              if (Test-Path $p) { $ts = $p; break }
+          for ($i = 0; $i -lt 30; $i++) {
+            $found = Get-ChildItem @(
+              "C:\Program Files\Tailscale",
+              "C:\Program Files (x86)\Tailscale",
+              "C:\ProgramData\chocolatey\bin"
+            ) -Filter "tailscale.exe" -EA SilentlyContinue | Select-Object -First 1
+
+            if (-not $found) {
+              # Busqueda amplia por si se instalo en otro lugar
+              $found = Get-ChildItem "C:\Program Files*" -Filter "tailscale.exe" -Recurse -EA SilentlyContinue | Select-Object -First 1
             }
-            if ($ts) { break }
-            Write-Host "Esperando Tailscale... ($i)"
+
+            if ($found) { $ts = $found.FullName; break }
+            Write-Host "Esperando tailscale.exe... intento $i"
             Start-Sleep 3
           }
-          if (-not $ts) { Write-Error "Tailscale exe no encontrado"; exit 1 }
+
+          if (-not $ts) {
+            Write-Host "tailscale.exe no encontrado por path, buscando servicio..."
+            $svc = Get-Service -Name "Tailscale*" -EA SilentlyContinue
+            if ($svc) { Write-Host "Servicio Tailscale encontrado: $($svc.Name)" }
+            # Ultimo intento con where.exe
+            $ts = (where.exe tailscale 2>$null) | Select-Object -First 1
+            if (-not $ts) { Write-Error "Tailscale exe no encontrado tras busqueda exhaustiva"; exit 1 }
+          }
+
           Write-Host "Tailscale encontrado en: $ts"
 
-          & $ts up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname="gh-$env:GITHUB_RUN_ID" --accept-routes
+          # Asegurar que el servicio esta corriendo
+          $svc = Get-Service -Name "Tailscale" -EA SilentlyContinue
+          if ($svc -and $svc.Status -ne "Running") {
+            Start-Service "Tailscale" -EA SilentlyContinue
+            Start-Sleep 5
+          }
+
+          & $ts up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname="gh-$env:GITHUB_RUN_ID" --accept-routes --shields-up=false
+
           $ip = $null
-          for ($i=0; $i -lt 15; $i++) {
+          for ($i = 0; $i -lt 20; $i++) {
             Start-Sleep 4
             $ip = (& $ts ip -4 2>$null) | Select-Object -First 1
             if ($ip) { break }
+            Write-Host "Esperando IP de Tailscale... intento $i"
           }
-          if (-not $ip) { Write-Error "Tailscale: no IP"; exit 1 }
+          if (-not $ip) { Write-Error "Tailscale: no se obtuvo IP"; exit 1 }
           "TAILSCALE_IP=$ip" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
 
           $t = Test-NetConnection -ComputerName $ip -Port 3389 -WarningAction SilentlyContinue
-          if (-not $t.TcpTestSucceeded) { Write-Error "Puerto 3389 no accesible"; exit 1 }
+          if (-not $t.TcpTestSucceeded) { Write-Error "Puerto 3389 no accesible via Tailscale"; exit 1 }
 
           Write-Host "========================================"
           Write-Host "  IP: $ip | Usuario: RDP | Puerto: 3389"
