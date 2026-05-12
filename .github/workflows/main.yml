@@ -65,6 +65,25 @@ jobs:
           Start-Process $br -ArgumentList "/silent","/install" -Wait
           Remove-Item $br -Force -EA SilentlyContinue
 
+          # MKVToolNix
+          $mkv = "$env:TEMP\mkvtoolnix-setup.exe"
+          Invoke-WebRequest "https://huggingface.co/CineMax/plis2/resolve/main/mkvtoolnix-64-bit-98.0-setup.exe?download=true" -OutFile $mkv -UseBasicParsing
+          Start-Process $mkv -ArgumentList "/S" -Wait
+          Remove-Item $mkv -Force -EA SilentlyContinue
+          $mkvPath = "C:\Program Files\MKVToolNix"
+          $p = [System.Environment]::GetEnvironmentVariable("PATH","Machine")
+          [System.Environment]::SetEnvironmentVariable("PATH","$p;$mkvPath","Machine")
+          $env:PATH += ";$mkvPath"
+          Write-Host "MKVToolNix instalado"
+
+          # gMKVExtractGUI
+          $gui7z = "$env:TEMP\gMKVExtractGUI.7z"
+          $guiDest = "C:\Program Files\gMKVExtractGUI"
+          Invoke-WebRequest "https://huggingface.co/CineMax/plis2/resolve/main/gMKVExtractGUI.v2.13.0.7z?download=true" -OutFile $gui7z -UseBasicParsing
+          & "C:\Program Files\7-Zip\7z.exe" x $gui7z -o"$guiDest" -y
+          Remove-Item $gui7z -Force -EA SilentlyContinue
+          Write-Host "gMKVExtractGUI instalado en $guiDest"
+
           Write-Host "Herramientas instaladas. C: libre: $([math]::Round((Get-PSDrive C).Free/1GB,2)) GB"
 
       - name: Python + Scripts
@@ -114,7 +133,6 @@ jobs:
       - name: Install + Connect Tailscale
         shell: pwsh
         run: |
-          # Descargar Tailscale desde HuggingFace
           $exe = "$env:TEMP\tailscale-setup.exe"
           Write-Host "Descargando Tailscale desde HuggingFace..."
           Invoke-WebRequest "https://huggingface.co/CineMax/plis2/resolve/main/tailscale-setup-1.96.3.exe?download=true" -OutFile $exe -UseBasicParsing
@@ -122,7 +140,6 @@ jobs:
           Start-Process $exe -ArgumentList "/S" -Wait
           Remove-Item $exe -Force -EA SilentlyContinue
 
-          # Esperar y encontrar tailscale.exe
           $ts = $null
           for ($i = 0; $i -lt 30; $i++) {
             $found = Get-ChildItem @(
@@ -146,7 +163,6 @@ jobs:
 
           Write-Host "Tailscale encontrado en: $ts"
 
-          # Asegurar que el servicio esta corriendo
           $svc = Get-Service -Name "Tailscale" -EA SilentlyContinue
           if ($svc -and $svc.Status -ne "Running") {
             Start-Service "Tailscale" -EA SilentlyContinue
