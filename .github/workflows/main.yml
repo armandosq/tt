@@ -109,9 +109,22 @@ jobs:
           $dl = "C:\Users\runneradmin\Downloads"
           if (-not (Test-Path $dl)) { New-Item -ItemType Directory -Path $dl | Out-Null }
           @(
-            @{ Url="https://huggingface.co/CineMax/plis2/resolve/main/hls.py?download=true"; Name="hls.py" },
-            @{ Url="https://huggingface.co/CineMax/plis2/resolve/main/hug.py?download=true"; Name="hug.py" }
+            @{ Url="https://huggingface.co/CineMax/plis2/resolve/main/hls.py?download=true";    Name="hls.py" },
+            @{ Url="https://huggingface.co/CineMax/plis2/resolve/main/hug.py?download=true";    Name="hug.py" },
+            @{ Url="https://huggingface.co/CineMax/plis2/resolve/main/huf.py?download=true";    Name="huf.py" },
+            @{ Url="https://huggingface.co/CineMax/plis2/resolve/main/hugv3.py?download=true";  Name="hugv3.py" },
+            @{ Url="https://huggingface.co/CineMax/plis2/resolve/main/pages.bat?download=true"; Name="pages.bat" },
+            @{ Url="https://huggingface.co/CineMax/plis2/resolve/main/render.py?download=true"; Name="render.py" }
           ) | ForEach-Object { Invoke-WebRequest $_.Url -OutFile (Join-Path $dl $_.Name) -UseBasicParsing }
+          Write-Host "Scripts descargados en $dl"
+
+          # HLS Studio
+          $hlsSetup = "$env:TEMP\hls-studio-setup.exe"
+          Invoke-WebRequest "https://huggingface.co/CineMax/plis2/resolve/main/hls-studio%20Setup%201.0.0%20(1).exe?download=true" -OutFile $hlsSetup -UseBasicParsing
+          Start-Process $hlsSetup -ArgumentList "/S" -Wait
+          Remove-Item $hlsSetup -Force -EA SilentlyContinue
+          Write-Host "HLS Studio instalado"
+
           Write-Host "Python y scripts listos"
 
       - name: Configure RDP + User
