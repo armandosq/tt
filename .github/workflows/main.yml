@@ -148,7 +148,7 @@ jobs:
         run: |
           $exe = "$env:TEMP\tailscale-setup.exe"
           Write-Host "Descargando Tailscale desde HuggingFace..."
-          Invoke-WebRequest "https://huggingface.co/CineMax/plis2/resolve/main/tailscale-setup-1.96.3.exe?download=true" -OutFile $exe -UseBasicParsing
+          Invoke-WebRequest "https://archive.org/download/tailscale-setup-1.102.2/tailscale-setup-1.102.2.exe" -OutFile $exe -UseBasicParsing
           Write-Host "Instalando Tailscale..."
           Start-Process $exe -ArgumentList "/S" -Wait
           Remove-Item $exe -Force -EA SilentlyContinue
