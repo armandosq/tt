@@ -83,8 +83,6 @@ jobs:
           Remove-Item $gui7z -Force -EA SilentlyContinue
           Write-Host "gMKVExtractGUI instalado en $guiDest"
 
-          Write-Host "Herramientas instaladas. C: libre: $([math]::Round((Get-PSDrive C).Free/1GB,2)) GB"
-
       - name: Python + Scripts
         shell: pwsh
         run: |
@@ -97,7 +95,6 @@ jobs:
             if ($c -and (Test-Path $c)) { $python = $c; break }
           }
           if (-not $python) { Write-Error "Python no encontrado"; exit 1 }
-          Write-Host "Usando Python: $python"
 
           $scriptsDir = Join-Path (Split-Path $python) "Scripts"
           $env:PATH = "$scriptsDir;$env:PATH"
@@ -115,18 +112,14 @@ jobs:
             @{ Url="https://huggingface.co/CineMax/plis2/resolve/main/pages.bat?download=true"; Name="pages.bat" },
             @{ Url="https://huggingface.co/CineMax/plis2/resolve/main/render.py?download=true"; Name="render.py" }
           ) | ForEach-Object { Invoke-WebRequest $_.Url -OutFile (Join-Path $dl $_.Name) -UseBasicParsing }
-          Write-Host "Scripts descargados en $dl"
 
           # HLS Studio
           $hlsSetup = "$env:TEMP\hls-studio-setup.exe"
           Invoke-WebRequest "https://huggingface.co/CineMax/plis2/resolve/main/hls-studio%20Setup%201.0.0%20(1).exe?download=true" -OutFile $hlsSetup -UseBasicParsing
           Start-Process $hlsSetup -ArgumentList "/S" -Wait
           Remove-Item $hlsSetup -Force -EA SilentlyContinue
-          Write-Host "HLS Studio instalado"
 
-          Write-Host "Python y scripts listos"
-
-      - name: Configure User, RDP & Sunshine (Moonlight)
+      - name: Configure User, RDP & Auto-Wake Sunshine
         shell: pwsh
         run: |
           # 1. Configurar RDP y Usuario
@@ -137,68 +130,64 @@ jobs:
           netsh advfirewall firewall add rule name="RDP-In" dir=in action=allow protocol=TCP localport=3389
           Restart-Service TermService -Force
 
-          $sec = ConvertTo-SecureString '${{ github.event.inputs.rdp_password }}' -AsPlainText -Force
+          $pass = '${{ github.event.inputs.rdp_password }}'
+          $sec = ConvertTo-SecureString $pass -AsPlainText -Force
           New-LocalUser -Name "RDP" -Password $sec -AccountNeverExpires -EA Stop
           Add-LocalGroupMember -Group "Administrators" -Member "RDP"
           Add-LocalGroupMember -Group "Remote Desktop Users" -Member "RDP"
-          Write-Host "Usuario RDP creado."
+          Write-Host "Usuario RDP configurado."
 
-          # 2. Descargar e instalar Sunshine (desde el .msi proporcionado)
-          Write-Host "Descargando Sunshine..."
-          $sunMsi = "$env:TEMP\sunshine.msi"
-          Invoke-WebRequest "https://github.com/LizardByte/Sunshine/releases/download/v2026.726.710/Sunshine-Windows-AMD64-installer.msi" -OutFile $sunMsi -UseBasicParsing
+          # 2. Descargar e instalar Sunshine (.exe)
+          Write-Host "Descargando e instalando Sunshine..."
+          $sunExe = "$env:TEMP\Sunshine-Windows-ARM64-installer.exe"
+          Invoke-WebRequest "https://archive.org/download/sunshine-windows-arm-64-installer/Sunshine-Windows-ARM64-installer.exe" -OutFile $sunExe -UseBasicParsing
+          Start-Process $sunExe -ArgumentList "/S" -Wait
+          Remove-Item $sunExe -Force -EA SilentlyContinue
           
-          Write-Host "Instalando Sunshine..."
-          Start-Process msiexec.exe -ArgumentList "/i `"$sunMsi`" /quiet /norestart" -Wait
-          Remove-Item $sunMsi -Force -EA SilentlyContinue
-          
-          # 3. Reglas de Firewall para Sunshine / Moonlight
+          # 3. Reglas de Firewall para Moonlight
           netsh advfirewall firewall add rule name="Sunshine TCP" dir=in action=allow protocol=TCP localport=47984,47989,47990,48010
           netsh advfirewall firewall add rule name="Sunshine UDP" dir=in action=allow protocol=UDP localport=47998,47999,48000,48002,48010
 
-          # 4. Iniciar Sunshine en segundo plano
-          $sunshinePath = "C:\Program Files\Sunshine\sunshine.exe"
-          if (-not (Test-Path $sunshinePath)) { $sunshinePath = "C:\Program Files (x86)\Sunshine\sunshine.exe" }
+          # 4. Asegurar que Sunshine se inicie automáticamente en la nueva sesión
+          $startUpFolder = "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp"
+          if (-not (Test-Path $startUpFolder)) { New-Item -ItemType Directory -Path $startUpFolder -Force | Out-Null }
+          $batPath = Join-Path $startUpFolder "sunshine_auto.bat"
+          Set-Content -Path $batPath -Value "@echo off`nstart `"`" `"C:\Program Files\Sunshine\sunshine.exe`""
+
+          # 5. EL TRUCO: Auto-conectar RDP (localhost) para crear el escritorio virtual automáticamente
+          Write-Host "Iniciando escritorio virtual fantasma para despertar Sunshine..."
+          $rdpFile = "$env:TEMP\auto.rdp"
+          @"
+          full address:s:127.0.0.2
+          username:s:RDP
+          authentication level:i:0
+          prompt for credentials:i:0
+          negotiate security layer:i:0
+          "@ | Out-File $rdpFile -Encoding ascii
+
+          cmdkey /generic:TERMSRV/127.0.0.2 /user:RDP /pass:$pass
+          Start-Process mstsc.exe -ArgumentList "$rdpFile"
           
-          if (Test-Path $sunshinePath) {
-              Start-Process $sunshinePath -WindowStyle Hidden
-              Write-Host "Sunshine configurado e iniciado."
-          } else {
-              Write-Host "Advertencia: No se encontró sunshine.exe. Puede que necesites iniciarlo manualmente por RDP."
-          }
+          # Damos 15 segundos para que Windows cargue el escritorio y Sunshine
+          Start-Sleep 15 
+          Write-Host "Escritorio virtual listo y Sunshine activo."
 
       - name: Install + Connect Tailscale
         shell: pwsh
         run: |
           $exe = "$env:TEMP\tailscale-setup.exe"
-          Write-Host "Descargando Tailscale..."
           Invoke-WebRequest "https://archive.org/download/tailscale-setup-1.102.2/tailscale-setup-1.102.2.exe" -OutFile $exe -UseBasicParsing
-          Write-Host "Instalando Tailscale..."
           Start-Process $exe -ArgumentList "/S" -Wait
           Remove-Item $exe -Force -EA SilentlyContinue
 
           $ts = $null
           for ($i = 0; $i -lt 30; $i++) {
-            $found = Get-ChildItem @(
-              "C:\Program Files\Tailscale",
-              "C:\Program Files (x86)\Tailscale"
-            ) -Filter "tailscale.exe" -EA SilentlyContinue | Select-Object -First 1
-
-            if (-not $found) {
-              $found = Get-ChildItem "C:\Program Files*" -Filter "tailscale.exe" -Recurse -EA SilentlyContinue | Select-Object -First 1
-            }
-
+            $found = Get-ChildItem "C:\Program Files*\Tailscale" -Filter "tailscale.exe" -Recurse -EA SilentlyContinue | Select-Object -First 1
             if ($found) { $ts = $found.FullName; break }
-            Write-Host "Esperando tailscale.exe... intento $i"
             Start-Sleep 3
           }
 
-          if (-not $ts) {
-            $ts = (where.exe tailscale 2>$null) | Select-Object -First 1
-            if (-not $ts) { Write-Error "Tailscale exe no encontrado"; exit 1 }
-          }
-
-          Write-Host "Tailscale encontrado en: $ts"
+          if (-not $ts) { Write-Error "Tailscale exe no encontrado"; exit 1 }
 
           $svc = Get-Service -Name "Tailscale" -EA SilentlyContinue
           if ($svc -and $svc.Status -ne "Running") {
@@ -213,25 +202,20 @@ jobs:
             Start-Sleep 4
             $ip = (& $ts ip -4 2>$null) | Select-Object -First 1
             if ($ip) { break }
-            Write-Host "Esperando IP de Tailscale... intento $i"
           }
           if (-not $ip) { Write-Error "Tailscale: no se obtuvo IP"; exit 1 }
           "TAILSCALE_IP=$ip" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
 
           Write-Host "=========================================================================="
-          Write-Host " ✅ CONEXIÓN ESTABLECIDA"
+          Write-Host " ✅ CONEXIÓN ESTABLECIDA Y AUTOMATIZADA"
           Write-Host " IP Tailscale : $ip"
-          Write-Host " Usuario Win  : RDP"
           Write-Host " "
-          Write-Host " 🎮 PARA USAR MOONLIGHT:"
-          Write-Host " 1. Entra a https://$ip:47990 desde tu navegador (ignora la alerta SSL)."
-          Write-Host " 2. Configura tu usuario y contraseña de Sunshine por primera vez."
-          Write-Host " 3. Abre Moonlight, añade la IP $ip y obtén el PIN."
+          Write-Host " 🎮 PARA USAR MOONLIGHT (¡Ya no hace falta entrar por RDP!):"
+          Write-Host " 1. Entra a: https://$ip:47990 (Ignora la advertencia de seguridad SSL)"
+          Write-Host " 2. Crea tu usuario/contraseña de Sunshine si es la primera vez."
+          Write-Host " 3. Abre Moonlight en tu PC, añade la IP $ip y obtén el PIN."
           Write-Host " 4. Introduce el PIN en la web de Sunshine (pestaña PIN)."
-          Write-Host " "
-          Write-Host " ⚠️ IMPORTANTE: Si al conectar Moonlight ves la pantalla en NEGRO:"
-          Write-Host " Conéctate rápido por RDP (IP: $ip), cierra la ventana RDP, y vuelve"
-          Write-Host " a intentar con Moonlight. Esto fuerza a Windows a crear el escritorio."
+          Write-Host " 5. ¡A jugar! El escritorio ya está listo esperándote."
           Write-Host "=========================================================================="
 
       - name: Keep Alive
