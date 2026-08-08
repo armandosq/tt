@@ -129,7 +129,7 @@ jobs:
       - name: Configure User, RDP & Sunshine (Moonlight)
         shell: pwsh
         run: |
-          # 1. Configurar RDP y Usuario (Se mantiene como respaldo)
+          # 1. Configurar RDP y Usuario
           Set-ItemProperty 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name fDenyTSConnections -Value 0 -Force
           Set-ItemProperty 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name UserAuthentication -Value 0 -Force
           Set-ItemProperty 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name SecurityLayer -Value 0 -Force
@@ -143,20 +143,29 @@ jobs:
           Add-LocalGroupMember -Group "Remote Desktop Users" -Member "RDP"
           Write-Host "Usuario RDP creado."
 
-          # 2. Instalar Sunshine (Servidor para Moonlight)
-          Write-Host "Instalando Sunshine para Moonlight..."
-          $sunExe = "$env:TEMP\sunshine-installer.exe"
-          Invoke-WebRequest "https://github.com/LizardByte/Sunshine/releases/latest/download/sunshine-windows-installer.exe" -OutFile $sunExe -UseBasicParsing
-          Start-Process $sunExe -ArgumentList "/S" -Wait
-          Remove-Item $sunExe -Force -EA SilentlyContinue
+          # 2. Descargar e instalar Sunshine (desde el .msi proporcionado)
+          Write-Host "Descargando Sunshine..."
+          $sunMsi = "$env:TEMP\sunshine.msi"
+          Invoke-WebRequest "https://github.com/LizardByte/Sunshine/releases/download/v2026.726.710/Sunshine-Windows-AMD64-installer.msi" -OutFile $sunMsi -UseBasicParsing
+          
+          Write-Host "Instalando Sunshine..."
+          Start-Process msiexec.exe -ArgumentList "/i `"$sunMsi`" /quiet /norestart" -Wait
+          Remove-Item $sunMsi -Force -EA SilentlyContinue
           
           # 3. Reglas de Firewall para Sunshine / Moonlight
           netsh advfirewall firewall add rule name="Sunshine TCP" dir=in action=allow protocol=TCP localport=47984,47989,47990,48010
           netsh advfirewall firewall add rule name="Sunshine UDP" dir=in action=allow protocol=UDP localport=47998,47999,48000,48002,48010
 
           # 4. Iniciar Sunshine en segundo plano
-          Start-Process "C:\Program Files\Sunshine\sunshine.exe" -WindowStyle Hidden
-          Write-Host "Sunshine configurado e iniciado."
+          $sunshinePath = "C:\Program Files\Sunshine\sunshine.exe"
+          if (-not (Test-Path $sunshinePath)) { $sunshinePath = "C:\Program Files (x86)\Sunshine\sunshine.exe" }
+          
+          if (Test-Path $sunshinePath) {
+              Start-Process $sunshinePath -WindowStyle Hidden
+              Write-Host "Sunshine configurado e iniciado."
+          } else {
+              Write-Host "Advertencia: No se encontró sunshine.exe. Puede que necesites iniciarlo manualmente por RDP."
+          }
 
       - name: Install + Connect Tailscale
         shell: pwsh
