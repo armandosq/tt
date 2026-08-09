@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       rdp_password:
-        description: 'Contraseña para el usuario RDP/Admin'
+        description: 'Contraseña para el usuario RDP'
         required: true
         type: string
 
@@ -137,10 +137,12 @@ jobs:
           Add-LocalGroupMember -Group "Remote Desktop Users" -Member "RDP"
           Write-Host "Usuario RDP configurado."
 
-          # 2. Descargar e instalar Sunshine (.exe)
-          Write-Host "Descargando e instalando Sunshine..."
-          $sunExe = "$env:TEMP\Sunshine-Windows-ARM64-installer.exe"
+          # 2. Descargar e instalar Sunshine (Enlace proporcionado)
+          Write-Host "Descargando instalador de Sunshine para AMD64..."
+          $sunExe = "$env:TEMP\Sunshine-Windows-AMD64-installer.exe"
           Invoke-WebRequest "https://archive.org/download/sunshine-windows-amd-64-installer/Sunshine-Windows-AMD64-installer.exe" -OutFile $sunExe -UseBasicParsing
+          
+          Write-Host "Instalando Sunshine..."
           Start-Process $sunExe -ArgumentList "/S" -Wait
           Remove-Item $sunExe -Force -EA SilentlyContinue
           
@@ -154,7 +156,7 @@ jobs:
           $batPath = Join-Path $startUpFolder "sunshine_auto.bat"
           Set-Content -Path $batPath -Value "@echo off`nstart `"`" `"C:\Program Files\Sunshine\sunshine.exe`""
 
-          # 5. EL TRUCO: Auto-conectar RDP (localhost) para crear el escritorio virtual automáticamente
+          # 5. Auto-conectar RDP (localhost) para crear el escritorio virtual automáticamente
           Write-Host "Iniciando escritorio virtual fantasma para despertar Sunshine..."
           $rdpFile = "$env:TEMP\auto.rdp"
           @"
@@ -168,7 +170,6 @@ jobs:
           cmdkey /generic:TERMSRV/127.0.0.2 /user:RDP /pass:$pass
           Start-Process mstsc.exe -ArgumentList "$rdpFile"
           
-          # Damos 15 segundos para que Windows cargue el escritorio y Sunshine
           Start-Sleep 15 
           Write-Host "Escritorio virtual listo y Sunshine activo."
 
