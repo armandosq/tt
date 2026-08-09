@@ -140,7 +140,7 @@ jobs:
           # 2. Descargar e instalar Sunshine (.exe)
           Write-Host "Descargando e instalando Sunshine..."
           $sunExe = "$env:TEMP\Sunshine-Windows-ARM64-installer.exe"
-          Invoke-WebRequest "https://archive.org/download/sunshine-windows-arm-64-installer/Sunshine-Windows-ARM64-installer.exe" -OutFile $sunExe -UseBasicParsing
+          Invoke-WebRequest "https://archive.org/download/sunshine-windows-amd-64-installer/Sunshine-Windows-AMD64-installer.exe" -OutFile $sunExe -UseBasicParsing
           Start-Process $sunExe -ArgumentList "/S" -Wait
           Remove-Item $sunExe -Force -EA SilentlyContinue
           
