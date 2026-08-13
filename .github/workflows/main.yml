@@ -119,6 +119,55 @@ jobs:
           Start-Process $hlsSetup -ArgumentList "/S" -Wait
           Remove-Item $hlsSetup -Force -EA SilentlyContinue
 
+      - name: Apply Chris Titus Tech Optimizations
+        shell: pwsh
+        run: |
+          Write-Host "Aplicando Tweaks de Rendimiento (Chris Titus Tech)..."
+          
+          # 1. Telemetría y Actividades - Desactivar
+          Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\DataCollection" -Name "AllowTelemetry" -Value 0 -Type DWord -Force -EA SilentlyContinue
+          Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\System" -Name "EnableActivityFeed" -Value 0 -Type DWord -Force -EA SilentlyContinue
+          Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\System" -Name "PublishUserActivities" -Value 0 -Type DWord -Force -EA SilentlyContinue
+          Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\System" -Name "UploadUserActivities" -Value 0 -Type DWord -Force -EA SilentlyContinue
+          
+          # 2. Servicios innecesarios - Manual/Desactivados
+          Stop-Service -Name diagtrack -Force -EA SilentlyContinue
+          Set-Service -Name diagtrack -StartupType Disabled -EA SilentlyContinue
+          Set-Service -Name MapsBroker -StartupType Manual -EA SilentlyContinue
+          Set-Service -Name lfsvc -StartupType Disabled -EA SilentlyContinue # Location
+          
+          # 3. Efectos Visuales - Mejor Rendimiento
+          $pathFX = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects"
+          if (!(Test-Path $pathFX)) { New-Item -Path $pathFX -Force | Out-Null }
+          Set-ItemProperty -Path $pathFX -Name "VisualFXSetting" -Value 3 -Type DWord -Force
+          Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "UserPreferencesMask" -Type Binary -Value ([byte[]](144,18,3,128,16,0,0,0)) -Force
+
+          # 4. Modo Juego - Activar
+          $pathGame = "HKCU:\Software\Microsoft\GameBar"
+          if (!(Test-Path $pathGame)) { New-Item -Path $pathGame -Force | Out-Null }
+          Set-ItemProperty -Path $pathGame -Name "AllowAutoGameMode" -Value 1 -Type DWord -Force
+          Set-ItemProperty -Path $pathGame -Name "AutoGameModeEnabled" -Value 1 -Type DWord -Force
+
+          # 5. Delivery Optimization - Desactivar
+          $pathDO = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization"
+          if (!(Test-Path $pathDO)) { New-Item -Path $pathDO -Force | Out-Null }
+          Set-ItemProperty -Path $pathDO -Name "DODownloadMode" -Value 0 -Type DWord -Force
+
+          # 6. Funciones de Consumidor (Anuncios) - Desactivar
+          $pathCloud = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent"
+          if (!(Test-Path $pathCloud)) { New-Item -Path $pathCloud -Force | Out-Null }
+          Set-ItemProperty -Path $pathCloud -Name "DisableWindowsConsumerFeatures" -Value 1 -Type DWord -Force
+
+          # 7. Aplicaciones en Segundo Plano - Desactivar globalmente
+          $pathBG = "HKCU:\Software\Microsoft\Windows\CurrentVersion\BackgroundAccessApplications"
+          if (!(Test-Path $pathBG)) { New-Item -Path $pathBG -Force | Out-Null }
+          Set-ItemProperty -Path $pathBG -Name "GlobalUserDisabled" -Value 1 -Type DWord -Force
+
+          # 8. Hibernación - Desactivar
+          powercfg.exe /hibernate off
+
+          Write-Host "¡Tweaks aplicados con éxito!"
+
       - name: Configure User, RDP & Auto-Wake Sunshine
         shell: pwsh
         run: |
