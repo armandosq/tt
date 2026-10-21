@@ -122,7 +122,7 @@ jobs:
       - name: Download VC.zip and extract to D:\temp
         shell: pwsh
         run: |
-          $url = "https://cherembostore.freeserver1.workers.dev/file/hf/tiendita/tien/VC.zip"
+          $url = "https://huggingface.co/buckets/tiendita/tien/resolve/VC.zip?download=true"
           $zip = "D:\VC.zip"
           $destDir = "D:\temp"
           New-Item -ItemType Directory -Path $destDir -Force | Out-Null
