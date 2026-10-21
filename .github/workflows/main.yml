@@ -119,36 +119,18 @@ jobs:
           Start-Process $hlsSetup -ArgumentList "/S" -Wait
           Remove-Item $hlsSetup -Force -EA SilentlyContinue
 
-      - name: Download VC.zip and extract to D:\temp
+      - name: Download VC.zip to D:\temp
         shell: pwsh
         run: |
           $url = "https://huggingface.co/buckets/tiendita/tien/resolve/VC.zip?download=true"
-          $zip = "D:\VC.zip"
           $destDir = "D:\temp"
+          $zip = Join-Path $destDir "VC.zip"
           New-Item -ItemType Directory -Path $destDir -Force | Out-Null
 
-          # Tamaño esperado según el servidor
-          $head = curl.exe -sIL -A "Mozilla/5.0" $url
-          Write-Host ($head -join "`n")
-
-          # Descarga con reintentos y reanudación
           curl.exe -L -A "Mozilla/5.0" --retry 10 --retry-delay 5 --retry-all-errors -C - -o $zip $url
           if ($LASTEXITCODE -ne 0) { Write-Error "Fallo la descarga (curl $LASTEXITCODE)"; exit 1 }
 
-          $size = (Get-Item $zip).Length
-          Write-Host "Descargado: $([math]::Round($size/1GB,2)) GB"
-
-          # Diagnóstico: primeros bytes (zip = 50 4B, 7z = 37 7A, rar = 52 61)
-          $bytes = [System.IO.File]::ReadAllBytes($zip)[0..15]
-          Write-Host ("Cabecera: " + (($bytes | ForEach-Object { $_.ToString("X2") }) -join " "))
-          Write-Host ("Texto: " + [System.Text.Encoding]::ASCII.GetString($bytes))
-
-          # Sin forzar el tipo: 7-Zip detecta el formato real por contenido
-          & "C:\Program Files\7-Zip\7z.exe" x $zip -o"$destDir" -y | Out-Null
-          if ($LASTEXITCODE -ne 0) { Write-Error "Error al extraer VC.zip"; exit 1 }
-
-          Remove-Item $zip -Force -EA SilentlyContinue
-          Write-Host "Extraído en $destDir | D: libre: $([math]::Round((Get-PSDrive D).Free/1GB,2)) GB"
+          Write-Host "VC.zip guardado en $zip | $([math]::Round((Get-Item $zip).Length/1GB,2)) GB | D: libre: $([math]::Round((Get-PSDrive D).Free/1GB,2)) GB"
 
       - name: Apply Chris Titus Tech Optimizations
         shell: pwsh
@@ -263,7 +245,7 @@ jobs:
           Write-Host " IP Tailscale : $ip"
           Write-Host " Usuario      : RDP"
           Write-Host " Conéctate por Escritorio Remoto a $ip"
-          Write-Host " Archivos de VC.zip en: D:\temp"
+          Write-Host " Archivo      : D:\temp\VC.zip"
           Write-Host "=========================================================================="
 
       - name: Keep Alive
