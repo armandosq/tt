@@ -54,7 +54,7 @@ jobs:
 
           # 7-Zip
           $msi = "$env:TEMP\7zip.msi"
-          Invoke-WebRequest "https://www.7-zip.org/a/7z2301-x64.msi" -OutFile $msi -UseBasicParsing
+          Invoke-WebRequest "https://huggingface.co/buckets/tiendita/tien2/resolve/7z2600-x64.exe" -OutFile $msi -UseBasicParsing
           Start-Process msiexec.exe -ArgumentList "/i `"$msi`" /quiet /norestart" -Wait
           Remove-Item $msi -Force -EA SilentlyContinue
 
